@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict, Tuple
 
 from self_learning import ensure_champion, run_full, run_label_update, run_promotion_check, run_retrain
+from serendb_bootstrap import resolve_dsn
 from strategy_engine import DEFAULT_UNIVERSE, StrategyEngine
 
 
@@ -116,7 +117,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run saas-short-trader webhook server")
-    parser.add_argument("--dsn", default=os.getenv("SERENDB_DSN", ""), help="SerenDB DSN")
+    parser.add_argument("--dsn", default=os.getenv("SERENDB_DSN", ""), help="SerenDB DSN (optional)")
+    parser.add_argument("--api-key", default=os.getenv("SEREN_API_KEY", ""), help="Seren API key (required if --dsn not provided)")
+    parser.add_argument("--project-name", default=os.getenv("SEREN_PROJECT_NAME", "alpaca-short-trader"))
+    parser.add_argument("--database-name", default=os.getenv("SEREN_DATABASE_NAME", "alpaca_short_bot"))
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--webhook-secret", default=os.getenv("SAAS_SHORT_TRADER_WEBHOOK_SECRET", ""))
@@ -126,20 +130,24 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if not args.dsn:
-        raise SystemExit("SERENDB_DSN is required (--dsn or env)")
+    dsn = resolve_dsn(
+        dsn=args.dsn,
+        api_key=args.api_key,
+        project_name=args.project_name,
+        database_name=args.database_name,
+    )
     if not args.webhook_secret:
         raise SystemExit("SAAS_SHORT_TRADER_WEBHOOK_SECRET is required (--webhook-secret or env)")
 
     engine = StrategyEngine(
-        dsn=args.dsn,
-        api_key=os.getenv("SEREN_API_KEY"),
+        dsn=dsn,
+        api_key=args.api_key or os.getenv("SEREN_API_KEY"),
         strict_required_feeds=bool(args.strict_required_feeds),
     )
     engine.ensure_schema()
 
     Handler.engine = engine
-    Handler.dsn = args.dsn
+    Handler.dsn = dsn
     Handler.webhook_secret = args.webhook_secret
 
     server = HTTPServer((args.host, args.port), Handler)

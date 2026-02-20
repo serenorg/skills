@@ -8,11 +8,11 @@ Requirements:
 
 Execute these commands in order:
 
-python3 scripts/setup_serendb.py --dsn "$SERENDB_DSN"
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type scan --mode paper-sim --strict-required-feeds --config config.example.json
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type monitor --mode paper-sim --config config.example.json
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type post-close --mode paper-sim --config config.example.json
-python3 scripts/self_learning.py --dsn "$SERENDB_DSN" --action full --mode paper-sim
+python3 scripts/setup_serendb.py --api-key "$SEREN_API_KEY"
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type scan --mode paper-sim --strict-required-feeds --config config.example.json
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type monitor --mode paper-sim --config config.example.json
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type post-close --mode paper-sim --config config.example.json
+python3 scripts/self_learning.py --api-key "$SEREN_API_KEY" --action full --mode paper-sim
 
 Then return:
 1. The 8 selected names (ticker + conviction + rank)

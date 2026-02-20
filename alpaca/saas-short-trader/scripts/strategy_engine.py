@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from self_learning import ensure_champion, run_label_update
 from seren_client import SerenClient
+from serendb_bootstrap import resolve_dsn
 from serendb_storage import SerenDBStorage
 
 
@@ -908,7 +909,10 @@ class StrategyEngine:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run SaaS short strategy engine")
-    parser.add_argument("--dsn", required=True, help="SerenDB connection string")
+    parser.add_argument("--dsn", default=os.getenv("SERENDB_DSN", ""), help="SerenDB connection string (optional)")
+    parser.add_argument("--api-key", default=os.getenv("SEREN_API_KEY", ""), help="Seren API key (required if --dsn not provided)")
+    parser.add_argument("--project-name", default=os.getenv("SEREN_PROJECT_NAME", "alpaca-short-trader"))
+    parser.add_argument("--database-name", default=os.getenv("SEREN_DATABASE_NAME", "alpaca_short_bot"))
     parser.add_argument("--run-type", required=True, choices=["scan", "monitor", "post-close"], help="Execution run type")
     parser.add_argument("--mode", default="paper-sim", choices=["paper", "paper-sim", "live"])
     parser.add_argument("--strict-required-feeds", action="store_true", help="Block scan if required data feeds fail")
@@ -923,9 +927,16 @@ def main() -> None:
         with open(args.config, "r", encoding="utf-8") as f:
             config = json.load(f)
 
-    engine = StrategyEngine(
+    dsn = resolve_dsn(
         dsn=args.dsn,
-        api_key=os.getenv("SEREN_API_KEY"),
+        api_key=args.api_key,
+        project_name=args.project_name,
+        database_name=args.database_name,
+    )
+
+    engine = StrategyEngine(
+        dsn=dsn,
+        api_key=args.api_key or os.getenv("SEREN_API_KEY"),
         strict_required_feeds=bool(args.strict_required_feeds or config.get("strict_required_feeds", False)),
     )
     engine.ensure_schema()

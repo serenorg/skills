@@ -52,16 +52,16 @@ cd alpaca/saas-short-trader
 python3 -m pip install -r requirements.txt
 cp .env.example .env
 cp config.example.json config.json
-python3 scripts/setup_serendb.py --dsn "$SERENDB_DSN"
+python3 scripts/setup_serendb.py --api-key "$SEREN_API_KEY"
 ```
 
 ## Run Once
 
 ```bash
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type scan --mode paper-sim
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type monitor --mode paper-sim
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type post-close --mode paper-sim
-python3 scripts/self_learning.py --dsn "$SERENDB_DSN" --action full --mode paper-sim
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type scan --mode paper-sim
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type monitor --mode paper-sim
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type post-close --mode paper-sim
+python3 scripts/self_learning.py --api-key "$SEREN_API_KEY" --action full --mode paper-sim
 ```
 
 ## Run Continuously (seren-cron)
@@ -69,7 +69,7 @@ python3 scripts/self_learning.py --dsn "$SERENDB_DSN" --action full --mode paper
 1. Start runner:
 
 ```bash
-SERENDB_DSN="$SERENDB_DSN" SAAS_SHORT_TRADER_WEBHOOK_SECRET="$SAAS_SHORT_TRADER_WEBHOOK_SECRET" \
+SEREN_API_KEY="$SEREN_API_KEY" SAAS_SHORT_TRADER_WEBHOOK_SECRET="$SAAS_SHORT_TRADER_WEBHOOK_SECRET" \
 python3 scripts/run_agent_server.py --host 0.0.0.0 --port 8787
 ```
 

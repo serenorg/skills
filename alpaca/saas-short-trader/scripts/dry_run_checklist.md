@@ -4,15 +4,14 @@ Use this checklist before every strategy dry run.
 
 ## 1) Environment
 
-- Confirm `SEREN_API_KEY` is set.
-- Confirm `SERENDB_DSN` points to the user database (`alpaca_short_bot` or intended target).
+- Confirm `SEREN_API_KEY` is set (database target is auto-resolved/created).
 - Confirm Python dependencies are installed:
   - `python3 -m pip install -r requirements.txt`
 
 ## 2) Data + Storage Readiness
 
 - Apply schemas:
-  - `python3 scripts/setup_serendb.py --dsn "$SERENDB_DSN"`
+  - `python3 scripts/setup_serendb.py --api-key "$SEREN_API_KEY"`
 - Verify key tables exist:
   - `trading.strategy_runs`
   - `trading.candidate_scores`

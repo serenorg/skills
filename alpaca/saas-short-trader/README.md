@@ -32,14 +32,14 @@ alpaca/saas-short-trader/
 python3 -m pip install -r requirements.txt
 cp .env.example .env
 cp config.example.json config.json
-python3 scripts/setup_serendb.py --dsn "$SERENDB_DSN"
-python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type scan --mode paper-sim --strict-required-feeds --config config.json
+python3 scripts/setup_serendb.py --api-key "$SEREN_API_KEY"
+python3 scripts/strategy_engine.py --api-key "$SEREN_API_KEY" --run-type scan --mode paper-sim --strict-required-feeds --config config.json
 ```
 
 ## Continuous Operation
 
 ```bash
-SERENDB_DSN="$SERENDB_DSN" SAAS_SHORT_TRADER_WEBHOOK_SECRET="$SAAS_SHORT_TRADER_WEBHOOK_SECRET" \
+SEREN_API_KEY="$SEREN_API_KEY" SAAS_SHORT_TRADER_WEBHOOK_SECRET="$SAAS_SHORT_TRADER_WEBHOOK_SECRET" \
 python3 scripts/run_agent_server.py --port 8787
 ```
 

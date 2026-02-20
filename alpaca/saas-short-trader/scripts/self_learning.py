@@ -11,7 +11,7 @@ Actions:
 - full: run label-update -> retrain -> promotion-check
 
 Usage:
-  python3 self_learning.py --dsn "$SERENDB_DSN" --action full
+  python3 self_learning.py --api-key "$SEREN_API_KEY" --action full
 """
 
 from __future__ import annotations
@@ -19,11 +19,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import psycopg
+
+from serendb_bootstrap import resolve_dsn
 
 
 DEFAULT_WEIGHTS = {"f": 0.30, "a": 0.30, "s": 0.20, "t": 0.20, "p": 1.00}
@@ -727,7 +730,10 @@ def run_full(conn: psycopg.Connection, mode: str) -> Dict[str, object]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Self-learning runner for saas-short-trader")
-    parser.add_argument("--dsn", required=True, help="Postgres DSN for user's SerenDB database")
+    parser.add_argument("--dsn", default=os.getenv("SERENDB_DSN", ""), help="Postgres DSN for user's SerenDB database (optional)")
+    parser.add_argument("--api-key", default=os.getenv("SEREN_API_KEY", ""), help="Seren API key (required if --dsn not provided)")
+    parser.add_argument("--project-name", default=os.getenv("SEREN_PROJECT_NAME", "alpaca-short-trader"))
+    parser.add_argument("--database-name", default=os.getenv("SEREN_DATABASE_NAME", "alpaca_short_bot"))
     parser.add_argument(
         "--action",
         required=True,
@@ -745,7 +751,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    with psycopg.connect(args.dsn) as conn:
+    dsn = resolve_dsn(
+        dsn=args.dsn,
+        api_key=args.api_key,
+        project_name=args.project_name,
+        database_name=args.database_name,
+    )
+
+    with psycopg.connect(dsn) as conn:
         ensure_champion(conn)
 
         if args.action == "label-update":
