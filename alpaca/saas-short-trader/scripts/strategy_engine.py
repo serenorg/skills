@@ -319,8 +319,12 @@ class StrategyEngine:
             market = self.fetch_market_features(tickers)
 
             marks = []
+            close_events = []
+            auto_close_enabled = mode in {"paper", "paper-sim"}
+            closed_positions = 0
             wins = 0
             gross = 0.0
+            total_realized = 0.0
             total_unrealized = 0.0
             for order in latest_orders:
                 details = order.get("details") or {}
@@ -330,6 +334,59 @@ class StrategyEngine:
                 mark = safe_float((market.data.get(ticker) or {}).get("price"), entry)
                 if mark <= 0:
                     mark = entry
+
+                target = safe_float(details.get("target_price"))
+                stop = safe_float(details.get("stop_price"))
+                open_order_ref = str(order.get("order_ref") or f"{ticker}-open")
+                exit_status: Optional[str] = None
+                if auto_close_enabled and target > 0 and mark <= target:
+                    exit_status = "closed_target"
+                elif auto_close_enabled and stop > 0 and mark >= stop:
+                    exit_status = "closed_stop"
+
+                if exit_status:
+                    realized = (entry - mark) * qty
+                    total_realized += realized
+                    wins += 1 if realized > 0 else 0
+                    closed_positions += 1
+                    close_events.append(
+                        {
+                            "order_ref": f"{open_order_ref}-close-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
+                            "ticker": ticker,
+                            "side": "BUY",
+                            "order_type": "market",
+                            "status": exit_status,
+                            "qty": round(qty, 6),
+                            "filled_qty": round(qty, 6),
+                            "filled_avg_price": round(mark, 6),
+                            "is_simulated": True,
+                            "details": {
+                                "open_order_ref": open_order_ref,
+                                "close_reason": "target" if exit_status == "closed_target" else "stop",
+                                "entry_price": round(entry, 6),
+                                "mark_price": round(mark, 6),
+                                "target_price": round(target, 6) if target > 0 else None,
+                                "stop_price": round(stop, 6) if stop > 0 else None,
+                                "realized_pnl": round(realized, 6),
+                                "monitor_run_id": run_id,
+                            },
+                        }
+                    )
+                    marks.append(
+                        {
+                            "ticker": ticker,
+                            "qty": 0.0,
+                            "avg_entry_price": entry,
+                            "mark_price": mark,
+                            "market_value": 0.0,
+                            "realized_pnl": realized,
+                            "unrealized_pnl": 0.0,
+                            "gross_exposure": 0.0,
+                            "net_exposure": 0.0,
+                        }
+                    )
+                    continue
+
                 unrealized = (entry - mark) * qty
                 wins += 1 if unrealized > 0 else 0
                 gross += abs(entry * qty)
@@ -348,13 +405,16 @@ class StrategyEngine:
                     }
                 )
 
+            if close_events:
+                self.storage.insert_order_events(run_id, mode, close_events)
             self.storage.upsert_position_marks(date.today(), mode, marks, source_run_id=run_id)
-            hit_rate = wins / max(1, len(marks))
-            max_drawdown = self.compute_drawdown(mode, total_unrealized)
+            total_net = total_realized + total_unrealized
+            hit_rate = wins / max(1, len(latest_orders))
+            max_drawdown = self.compute_drawdown(mode, total_net)
             self.storage.upsert_pnl_daily(
                 as_of_date=date.today(),
                 mode=mode,
-                realized_pnl=0.0,
+                realized_pnl=total_realized,
                 unrealized_pnl=total_unrealized,
                 gross_exposure=gross,
                 net_exposure=-gross,
@@ -362,14 +422,26 @@ class StrategyEngine:
                 max_drawdown=max_drawdown,
                 source_run_id=run_id,
             )
-            self.storage.update_run_status(run_id, "completed", {"symbols": tickers, "market_feed_ok": market.ok})
+            self.storage.update_run_status(
+                run_id,
+                "completed",
+                {
+                    "symbols": tickers,
+                    "market_feed_ok": market.ok,
+                    "auto_close_enabled": auto_close_enabled,
+                    "closed_positions": closed_positions,
+                    "open_positions": len(latest_orders) - closed_positions,
+                },
+            )
             return {
                 "status": "completed",
                 "run_id": run_id,
                 "mode": mode,
                 "run_type": run_type,
                 "symbols": tickers,
+                "realized_pnl": round(total_realized, 6),
                 "unrealized_pnl": round(total_unrealized, 6),
+                "closed_positions": closed_positions,
                 "hit_rate": round(hit_rate, 4),
             }
         except Exception as exc:
