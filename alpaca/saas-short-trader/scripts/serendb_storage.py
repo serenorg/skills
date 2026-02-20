@@ -286,6 +286,7 @@ class SerenDBStorage:
                     """
                     SELECT
                       e.run_id,
+                      e.order_ref,
                       e.ticker,
                       e.qty,
                       e.status,
@@ -297,6 +298,15 @@ class SerenDBStorage:
                       AND sr.mode = %s
                       AND COALESCE(sr.metadata->>'run_type', '') = 'scan'
                       AND sr.status = 'completed'
+                      AND e.side = 'SELL'
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM trading.order_events x
+                        WHERE x.mode = e.mode
+                          AND x.side = 'BUY'
+                          AND x.status IN ('closed_target', 'closed_stop', 'closed_eod', 'closed_manual')
+                          AND COALESCE(x.details->>'open_order_ref', '') = e.order_ref
+                      )
                     ORDER BY sr.created_at DESC
                     LIMIT 200
                     """,
