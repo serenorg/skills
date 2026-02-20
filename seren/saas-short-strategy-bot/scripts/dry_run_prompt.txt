@@ -1,0 +1,31 @@
+Run a complete dry run for `saas-short-strategy-bot` in `paper-sim` mode with strict feeds enabled.
+
+Requirements:
+- Score 30 SaaS names (`max_names_scored=30`)
+- Cap planned shorts at 8 (`max_names_orders=8`)
+- Use publishers: `alpaca`, `sec-filings-intelligence`, `google-trends`, `perplexity` (fallback `exa`)
+- Persist all data and PnL to the connected SerenDB instance
+
+Execute these commands in order:
+
+python3 scripts/setup_serendb.py --dsn "$SERENDB_DSN"
+python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type scan --mode paper-sim --strict-required-feeds --config config.example.json
+python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type monitor --mode paper-sim --config config.example.json
+python3 scripts/strategy_engine.py --dsn "$SERENDB_DSN" --run-type post-close --mode paper-sim --config config.example.json
+python3 scripts/self_learning.py --dsn "$SERENDB_DSN" --action full --mode paper-sim
+
+Then return:
+1. The 8 selected names (ticker + conviction + rank)
+2. Feed status per publisher
+3. Simulated 5D/10D/20D net PnL and hit rate
+4. Confirmation that rows were written to:
+   - trading.strategy_runs
+   - trading.candidate_scores
+   - trading.order_events
+   - trading.position_marks_daily
+   - trading.pnl_daily
+   - trading.learning_feature_snapshots
+   - trading.learning_outcome_labels
+   - trading.learning_policy_versions
+   - trading.learning_policy_assignments
+   - trading.learning_events
