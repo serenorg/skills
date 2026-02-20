@@ -2,6 +2,42 @@
 
 Extended documentation for the AI Governance Assessment skill.
 
+## SerenDB Schema
+
+Assessment results are persisted to SerenDB for historical tracking and remediation monitoring.
+
+### Tables
+
+| Table | Purpose |
+|-------|---------|
+| `governance.assessments` | Main assessment records with overall scores |
+| `governance.domain_scores` | Individual domain maturity scores (8 per assessment) |
+| `governance.framework_alignment` | Readiness percentages for each applicable framework |
+| `governance.gaps` | Identified gaps with recommendations and status tracking |
+| `governance.risk_register` | Risk entries with likelihood, impact, and controls |
+| `governance.roadmap_items` | Phased remediation tasks with status tracking |
+
+### Views
+
+| View | Purpose |
+|------|---------|
+| `governance.v_assessment_summary` | Quick overview with gap counts and progress |
+| `governance.v_gap_progress` | Track overdue and at-risk remediation items |
+
+### Schema Setup
+
+Apply the schema via MCP:
+
+```
+mcp__seren-mcp__run_sql(
+  project_id: "<project_id>",
+  database: "governance_assessments",
+  query: "<contents of scripts/serendb_schema.sql>"
+)
+```
+
+See `scripts/serendb_schema.sql` for full DDL.
+
 ## Domain Scoring Criteria
 
 ### Domain 1: Strategy & Leadership
