@@ -1,0 +1,91 @@
+{
+  "skill_name": "Kraken Money Mode Router",
+  "available_publishers": [
+    "kraken-spot-trading",
+    "kraken-ramp"
+  ],
+  "mode_order": [
+    "payments",
+    "investing",
+    "active-trading",
+    "onchain",
+    "automation"
+  ],
+  "score_weights": {
+    "primary_goal": {
+      "move-money": {"payments": 6, "onchain": 2},
+      "grow-portfolio": {"investing": 6, "active-trading": 2},
+      "trade-markets": {"active-trading": 6, "automation": 2},
+      "build-onchain": {"onchain": 6, "automation": 2},
+      "automate": {"automation": 6, "active-trading": 2}
+    },
+    "time_horizon": {
+      "today": {"payments": 3, "active-trading": 2},
+      "weeks": {"active-trading": 2, "automation": 2},
+      "months": {"investing": 3, "automation": 2},
+      "years": {"investing": 4, "onchain": 2}
+    },
+    "risk_level": {
+      "low": {"payments": 2, "investing": 3},
+      "medium": {"investing": 2, "automation": 2, "active-trading": 1},
+      "high": {"active-trading": 3, "onchain": 3, "automation": 2}
+    },
+    "hands_on": {
+      "hands-off": {"automation": 4, "investing": 2},
+      "balanced": {"investing": 2, "automation": 2, "active-trading": 1},
+      "hands-on": {"active-trading": 4, "onchain": 2}
+    },
+    "portfolio_focus": {
+      "multi-asset": {"investing": 4},
+      "crypto": {"active-trading": 3, "onchain": 3},
+      "equities": {"investing": 4},
+      "payments": {"payments": 4}
+    },
+    "activity_frequency": {
+      "daily": {"payments": 3, "active-trading": 2},
+      "weekly": {"automation": 3, "active-trading": 1},
+      "monthly": {"investing": 3, "automation": 2}
+    }
+  },
+  "publisher_requirements": {
+    "payments": ["kraken-ramp"],
+    "investing": ["kraken-spot-trading"],
+    "active-trading": ["kraken-spot-trading"],
+    "onchain": ["kraken-spot-trading"],
+    "automation": ["kraken-spot-trading"]
+  },
+  "mode_endpoint_catalog": {
+    "payments": [
+      {"publisher": "kraken-ramp", "method": "GET", "path": "/b2b/ramp/buy/crypto"},
+      {"publisher": "kraken-ramp", "method": "GET", "path": "/b2b/ramp/payment-methods"},
+      {"publisher": "kraken-ramp", "method": "GET", "path": "/b2b/ramp/limits"},
+      {"publisher": "kraken-ramp", "method": "GET", "path": "/b2b/ramp/quotes/prospective"},
+      {"publisher": "kraken-ramp", "method": "GET", "path": "/b2b/ramp/checkout"}
+    ],
+    "investing": [
+      {"publisher": "kraken-spot-trading", "method": "GET", "path": "/public/AssetPairs"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/Balance"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/AddOrder"}
+    ],
+    "active-trading": [
+      {"publisher": "kraken-spot-trading", "method": "GET", "path": "/public/Ticker"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/OpenOrders"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/AddOrder"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/CancelOrder"}
+    ],
+    "onchain": [
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/DepositMethods"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/DepositAddresses"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/WithdrawMethods"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/WithdrawInfo"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/Withdraw"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/WalletTransfer"}
+    ],
+    "automation": [
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/AddOrderBatch"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/CancelOrderBatch"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/CancelAllOrdersAfter"},
+      {"publisher": "kraken-spot-trading", "method": "POST", "path": "/private/GetWebSocketsToken"}
+    ]
+  }
+}

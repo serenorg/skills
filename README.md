@@ -32,7 +32,8 @@ seren-skills/
 ├── cryptobullseyezone/
 │   └── tax/                     # 1099-DA to Form 8949 reconciliation guide
 ├── kraken/
-│   └── grid-trader/             # Kraken grid trading bot
+│   ├── grid-trader/             # Kraken grid trading bot
+│   └── money-mode-router/       # Kraken product mode recommender
 ├── polymarket/
 │   └── trader/                  # Polymarket prediction market bot
 └── seren/
