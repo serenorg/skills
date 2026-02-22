@@ -1,0 +1,168 @@
+skill: spectra-pt-yield-trader
+description: Plan and evaluate Spectra PT yield trades using the Spectra MCP server across 10 chains. Read-only analytics with risk-gated execution handoff.
+triggers:
+  - find the best fixed yield opportunities on spectra
+  - paper trade spectra principal tokens
+  - quote and simulate spectra pt trades before execution
+runtime:
+  language: python
+  entrypoint: scripts/agent.py
+inputs:
+  chain:
+    type: string
+    enum:
+      - ethereum
+      - base
+      - arbitrum
+      - optimism
+      - avalanche
+      - bsc
+      - sonic
+      - flare
+      - katana
+      - monad
+    default: base
+  wallet_mode:
+    type: string
+    enum:
+      - delegated
+    default: delegated
+  live_mode:
+    type: boolean
+    default: false
+  side:
+    type: string
+    enum:
+      - buy
+      - sell
+    default: buy
+  underlying_symbol:
+    type: string
+    default: USDC
+  capital_usd:
+    type: number
+    min: 1
+    default: 100
+  top_n:
+    type: integer
+    min: 1
+    max: 20
+    default: 5
+  min_liquidity_usd:
+    type: number
+    min: 0
+    default: 50000
+  max_price_impact_pct:
+    type: number
+    min: 0
+    max: 10
+    default: 2
+  include_looping:
+    type: boolean
+    default: false
+  target_maturity_days_min:
+    type: integer
+    min: 0
+    default: 7
+  target_maturity_days_max:
+    type: integer
+    min: 1
+    default: 365
+  pt_address:
+    type: string
+    default: ""
+  wallet_address:
+    type: string
+    default: ""
+  ve_spectra_balance:
+    type: number
+    min: 0
+    default: 0
+secrets:
+  - SEREN_API_KEY
+connectors:
+  mcp_spectra:
+    kind: seren_publisher
+    publisher: mcp-spectra
+  seren_cron:
+    kind: seren_publisher
+    publisher: seren-cron
+state:
+  trades:
+    kind: sqlite
+    file: state/trades.db
+policies:
+  dry_run_default: true
+  idempotency_required: true
+  max_daily_spend_usd: 250
+  max_notional_usd: 1000
+  max_slippage_bps: 200
+workflow:
+  steps:
+    - id: validate_inputs
+      use: transform.validate_trade_inputs
+      with:
+        chain: "{chain}"
+        capital_usd: "{capital_usd}"
+        max_price_impact_pct: "{max_price_impact_pct}"
+    - id: scan_opportunities
+      use: connector.mcp_spectra.call
+      with:
+        tool: scan_opportunities
+        chain: "{chain}"
+        capital_usd: "{capital_usd}"
+        underlying_symbol: "{underlying_symbol}"
+        max_price_impact_pct: "{max_price_impact_pct}"
+        min_liquidity_usd: "{min_liquidity_usd}"
+        top_n: "{top_n}"
+        ve_spectra_balance: "{ve_spectra_balance}"
+    - id: select_candidate
+      use: transform.select_top_pt_candidate
+      with:
+        from_step: scan_opportunities
+        underlying_symbol: "{underlying_symbol}"
+        target_maturity_days_min: "{target_maturity_days_min}"
+        target_maturity_days_max: "{target_maturity_days_max}"
+        pt_address: "{pt_address}"
+    - id: quote_trade
+      use: connector.mcp_spectra.call
+      with:
+        tool: quote_trade
+        from_step: select_candidate
+        side: "{side}"
+        capital_usd: "{capital_usd}"
+    - id: simulate_portfolio
+      use: connector.mcp_spectra.call
+      with:
+        tool: simulate_portfolio_after_trade
+        from_step: quote_trade
+        wallet_address: "{wallet_address}"
+    - id: optional_looping_check
+      use: connector.mcp_spectra.call
+      with:
+        tool: get_looping_strategy
+        from_step: select_candidate
+        enabled: "{include_looping}"
+    - id: risk_guard
+      use: transform.guard_execution_handoff
+      with:
+        from_step: quote_trade
+        live_mode: "{live_mode}"
+        max_notional_usd: "{capital_usd}"
+        max_slippage_bps: 200
+    - id: execution_handoff
+      use: transform.emit_execution_intent
+      with:
+        from_step: risk_guard
+tests:
+  quick:
+    - validates_chain_and_maturity_ranges
+    - enforces_risk_caps
+  smoke:
+    - dry_run_plan_is_successful
+    - live_handoff_requires_explicit_opt_in
+publish:
+  org: spectra
+  slug: spectra-pt-yield-trader
+metadata:
+  category: trading

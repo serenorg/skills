@@ -1,0 +1,36 @@
+{
+  "connectors": [
+    "mcp_spectra",
+    "seren_cron"
+  ],
+  "dry_run": true,
+  "inputs": {
+    "capital_usd": 100,
+    "chain": "base",
+    "include_looping": false,
+    "live_mode": false,
+    "max_price_impact_pct": 2,
+    "min_liquidity_usd": 50000,
+    "pt_address": "",
+    "side": "buy",
+    "target_maturity_days_max": 365,
+    "target_maturity_days_min": 7,
+    "top_n": 5,
+    "underlying_symbol": "USDC",
+    "ve_spectra_balance": 0,
+    "wallet_address": "",
+    "wallet_mode": "delegated"
+  },
+  "execution": {
+    "confirm_live_handoff": false,
+    "executor": {
+      "name": "",
+      "type": "manual"
+    }
+  },
+  "policies": {
+    "max_notional_usd": 1000,
+    "max_slippage_bps": 200
+  },
+  "skill": "spectra-pt-yield-trader"
+}

@@ -1,0 +1,8 @@
+{
+  "status": "error",
+  "skill": "spectra-pt-yield-trader",
+  "error_code": "connector_failure",
+  "connector": "mcp_spectra",
+  "message": "Spectra MCP connector failed during smoke test.",
+  "connectors": {}
+}
