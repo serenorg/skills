@@ -1,5 +1,5 @@
 ---
-name: Polymarket Bot
+name: bot
 display-name: Polymarket Bot
 description: "Autonomous trading agent for Polymarket prediction markets using Seren ecosystem"
 ---
@@ -66,7 +66,7 @@ When the user asks to **scan Polymarket** or **find trading opportunities**, run
 First, verify the skill is set up:
 
 ```bash
-ls ~/.config/seren/skills/polymarket-trader/.env ~/.config/seren/skills/polymarket-trader/config.json
+ls ~/.config/seren/skills/polymarket-bot/.env ~/.config/seren/skills/polymarket-bot/config.json
 ```
 
 If files are missing, guide user through setup (see Phase 1-2 below).
@@ -76,7 +76,7 @@ If files are missing, guide user through setup (see Phase 1-2 below).
 Run a single scan to find mispriced markets:
 
 ```bash
-cd ~/.config/seren/skills/polymarket-trader && python3 scripts/agent.py --config config.json --dry-run --once 2>&1
+cd ~/.config/seren/skills/polymarket-bot && python3 scripts/agent.py --config config.json --dry-run --once 2>&1
 ```
 
 **What this does:**
@@ -112,7 +112,7 @@ Found 3 opportunities:
 View recent scan logs:
 
 ```bash
-tail -50 ~/.config/seren/skills/polymarket-trader/logs/trading_*.log
+tail -50 ~/.config/seren/skills/polymarket-bot/logs/trading_*.log
 ```
 
 ### Running Live Trading (Advanced)
@@ -124,7 +124,7 @@ tail -50 ~/.config/seren/skills/polymarket-trader/logs/trading_*.log
 - Real Polymarket API credentials
 
 ```bash
-cd ~/.config/seren/skills/polymarket-trader && python3 scripts/run_agent_server.py --config config.json &
+cd ~/.config/seren/skills/polymarket-bot && python3 scripts/run_agent_server.py --config config.json &
 ```
 
 Then setup cron:
@@ -202,7 +202,7 @@ This skill helps users set up and manage an autonomous trading agent that:
 Check Python version and install requirements:
 
 ```bash
-cd skills/polymarket-trader
+cd skills/polymarket-bot
 
 # Check Python version (need 3.9+)
 python3 --version
@@ -631,7 +631,7 @@ seren = SerenClient()
 
 # Create cron job
 job = seren.create_cron_job(
-    name='polymarket-trader',
+    name='polymarket-bot',
     schedule='*/10 * * * *',  # Every 10 minutes
     url='http://localhost:8000/run-scan',  # Your endpoint
     method='POST',
@@ -657,7 +657,7 @@ Read current positions and display status:
 import json
 
 # Read positions
-with open('skills/polymarket-trader/logs/positions.json', 'r') as f:
+with open('skills/polymarket-bot/logs/positions.json', 'r') as f:
     data = json.load(f)
 
 # Display
@@ -680,7 +680,7 @@ Read and display trade history:
 import json
 
 # Read last 20 trades
-with open('skills/polymarket-trader/logs/trades.jsonl', 'r') as f:
+with open('skills/polymarket-bot/logs/trades.jsonl', 'r') as f:
     lines = f.readlines()
 
 trades = [json.loads(line) for line in lines[-20:]]

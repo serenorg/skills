@@ -20,14 +20,14 @@ class SerenDBStorage:
     def __init__(
         self,
         seren_client: SerenClient,
-        project_name: str = "polymarket-trader"
+        project_name: str = "polymarket-bot"
     ):
         """
         Initialize SerenDB storage
 
         Args:
             seren_client: SerenClient instance for API calls
-            project_name: SerenDB project name (default: polymarket-trader)
+            project_name: SerenDB project name (default: polymarket-bot)
         """
         self.seren = seren_client
         self.project_name = project_name

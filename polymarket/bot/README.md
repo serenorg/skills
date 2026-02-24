@@ -16,7 +16,7 @@ Autonomous trading agent for Polymarket prediction markets using the Seren ecosy
 ### 1. Install Dependencies
 
 ```bash
-cd skills/polymarket-trader
+cd skills/polymarket-bot
 pip3 install -r requirements.txt
 ```
 
@@ -75,7 +75,7 @@ python3 scripts/agent.py --config config.json
 ## Project Structure
 
 ```
-polymarket-trader/
+polymarket-bot/
 ├── scripts/agent.py                 # Main trading bot
 ├── scripts/seren_client.py          # Seren API client
 ├── scripts/polymarket_client.py     # Polymarket CLOB API wrapper

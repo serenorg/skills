@@ -35,7 +35,7 @@ seren-skills/
 │   ├── grid-trader/             # Kraken grid trading bot
 │   └── money-mode-router/       # Kraken product mode recommender
 ├── polymarket/
-│   └── trader/                  # Polymarket prediction market bot
+│   └── bot/                     # Polymarket prediction market bot
 └── seren/
     ├── browser-automation/      # Playwright browser automation
     ├── getting-started/         # Getting started guide
@@ -50,7 +50,7 @@ The slug is derived by joining the org and skill name with a hyphen:
 ```
 coinbase/grid-trader     -> coinbase-grid-trader
 cryptobullseyezone/tax   -> cryptobullseyezone-tax
-polymarket/trader        -> polymarket-trader
+polymarket/bot           -> polymarket-bot
 seren/getting-started    -> seren-getting-started
 seren/browser-automation -> seren-browser-automation
 ```
