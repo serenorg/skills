@@ -1,0 +1,22 @@
+{
+  "_comment": "Maps transaction categories to IRS tax line items for Schedule C and standard deductions.",
+  "deductible": {
+    "housing": { "label": "Home Office / Rent", "schedule": "C", "line": "30", "deductible": true },
+    "utilities": { "label": "Utilities", "schedule": "C", "line": "25", "deductible": true },
+    "insurance": { "label": "Insurance", "schedule": "C", "line": "15", "deductible": true },
+    "transportation": { "label": "Car & Truck Expenses", "schedule": "C", "line": "9", "deductible": true },
+    "healthcare": { "label": "Health Insurance", "schedule": "1040", "line": "17", "deductible": true },
+    "subscriptions": { "label": "Business Subscriptions", "schedule": "C", "line": "27a", "deductible": true },
+    "fees": { "label": "Bank Fees", "schedule": "C", "line": "27a", "deductible": true }
+  },
+  "non_deductible": {
+    "groceries": { "label": "Groceries (Personal)", "deductible": false },
+    "dining": { "label": "Dining (Personal)", "deductible": false },
+    "shopping": { "label": "Shopping (Personal)", "deductible": false }
+  },
+  "income": {
+    "payroll": { "label": "W-2 Wages", "form": "W-2" },
+    "interest_income": { "label": "Interest Income", "form": "1099-INT" },
+    "refunds": { "label": "Refunds", "form": "none" }
+  }
+}

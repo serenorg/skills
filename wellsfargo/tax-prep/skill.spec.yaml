@@ -1,0 +1,50 @@
+skill: tax-prep
+description: Categorize transactions into IRS tax line items and generate tax preparation summaries from Wells Fargo data in SerenDB.
+triggers:
+  - wells fargo tax preparation
+  - categorize wellsfargo tax deductions
+runtime:
+  language: python
+  entrypoint: scripts/run.py
+inputs:
+  year:
+    type: integer
+    default: 2025
+  start:
+    type: string
+  end:
+    type: string
+  out:
+    type: string
+    default: artifacts/tax-prep
+  skip_persist:
+    type: boolean
+    default: false
+connectors:
+  serendb:
+    kind: seren_publisher
+    publisher: serendb
+policies:
+  dry_run_default: false
+  idempotency_required: true
+workflow:
+  steps:
+    - id: resolve_serendb
+      use: connector.serendb.connect
+    - id: query_transactions
+      use: connector.serendb.query
+    - id: classify_tax_items
+      use: transform.map_tax_categories
+    - id: build_summary
+      use: transform.aggregate_tax_items
+    - id: render_report
+      use: transform.render
+    - id: persist_snapshot
+      use: connector.serendb.upsert
+publish:
+  org: seren-skills
+  slug: tax-prep
+metadata:
+  category: finance
+  depends_on:
+    - bank-statement-processing

@@ -1,22 +1,58 @@
 ---
 name: tax-prep
-description: "Map Wells Fargo transaction categories to IRS tax line items, calculate estimated quarterly payments, flag deductible expenses, and produce a tax-ready summary with totals per line item."
+description: "Categorize transactions into IRS tax line items and generate tax preparation summaries from Wells Fargo data in SerenDB."
 ---
 
-# Tax Prep
+# Wells Fargo Tax Prep
 
-## When to Use
+## When To Use
 
-- prepare tax summary from wells fargo data
-- calculate estimated quarterly taxes
-- categorize deductible expenses
+- Categorize transactions into IRS Schedule C or standard tax deduction categories.
+- Generate tax preparation summaries with deductible expenses.
+- Estimate potential tax deductions from bank transaction data.
+- Persist tax categorization snapshots into SerenDB for accountant review.
 
-## Workflow Summary
+## Prerequisites
 
-1. `resolve_serendb` uses `connector.serendb.connect`
-2. `query_transactions` uses `connector.serendb.query`
-3. `map_tax_line_items` uses `transform.map_to_tax_lines`
-4. `flag_deductions` uses `transform.flag_deductible_expenses`
-5. `compute_quarterly_estimates` uses `transform.compute_quarterly_estimates`
-6. `render_report` uses `transform.render`
-7. `persist_tax_data` uses `connector.serendb.upsert`
+- The `bank-statement-processing` skill must have completed at least one successful run with SerenDB sync enabled.
+- SerenDB must contain populated `wf_transactions` and `wf_txn_categories` tables.
+
+## Safety Profile
+
+- Read-only against SerenDB source tables.
+- Writes only to dedicated `wf_tax_*` tables (never modifies upstream data).
+- Not a substitute for professional tax advice. Generated summaries are estimates only.
+
+## Quick Start
+
+```bash
+cd wellsfargo/tax-prep
+python3 -m pip install -r requirements.txt
+cp .env.example .env && cp config.example.json config.json
+python3 scripts/run.py --config config.json --year 2025 --out artifacts/tax-prep
+```
+
+## Commands
+
+```bash
+python3 scripts/run.py --config config.json --year 2025 --out artifacts/tax-prep
+python3 scripts/run.py --config config.json --start 2025-01-01 --end 2025-12-31 --out artifacts/tax-prep
+python3 scripts/run.py --config config.json --year 2025 --skip-persist --out artifacts/tax-prep
+```
+
+## Outputs
+
+- Markdown report: `artifacts/tax-prep/reports/<run_id>.md`
+- JSON report: `artifacts/tax-prep/reports/<run_id>.json`
+- Line items: `artifacts/tax-prep/exports/<run_id>.tax_items.jsonl`
+
+## SerenDB Tables
+
+- `wf_tax_runs` - tax prep runs
+- `wf_tax_line_items` - per-category tax line items per run
+- `wf_tax_snapshots` - summary snapshot per run
+
+## Reusable Views
+
+- `v_wf_tax_latest` - most recent tax prep snapshot
+- `v_wf_tax_deductions` - deductible items from latest run
