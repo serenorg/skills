@@ -1,10 +1,11 @@
-"""SerenDB persistence for Coinbase Grid Trader via local seren-mcp."""
+"""SerenDB persistence for Coinbase Grid Trader via local MCP CLI."""
 
 from __future__ import annotations
 
 import json
 import os
 import select
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 class SerenMCPError(RuntimeError):
-    """Raised when a local seren-mcp tool call fails."""
+    """Raised when a local MCP tool call fails."""
 
 
 @dataclass
@@ -27,9 +28,17 @@ class _SerenMCPClient:
     def __init__(self, api_key: str, mcp_command: str = "seren-mcp", timeout_seconds: int = 30):
         self.api_key = api_key
         self.mcp_command = mcp_command
+        self._mcp_command_parts = self._parse_mcp_command(mcp_command)
         self.timeout_seconds = timeout_seconds
         self._process: Optional[subprocess.Popen[str]] = None
         self._next_id = 1
+
+    @staticmethod
+    def _parse_mcp_command(command: str) -> List[str]:
+        parts = shlex.split(command)
+        if not parts:
+            raise SerenMCPError("MCP command is empty")
+        return parts
 
     def start(self) -> None:
         if self._process is not None:
@@ -39,7 +48,7 @@ class _SerenMCPClient:
         env["API_KEY"] = self.api_key
 
         self._process = subprocess.Popen(
-            [self.mcp_command, "start"],
+            [*self._mcp_command_parts, "start"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -49,7 +58,7 @@ class _SerenMCPClient:
         )
 
         if self._process.stdin is None or self._process.stdout is None:
-            raise SerenMCPError("Failed to open stdio pipes for seren-mcp")
+            raise SerenMCPError("Failed to open stdio pipes for MCP CLI")
 
         init_response = self._request(
             "initialize",
@@ -60,7 +69,7 @@ class _SerenMCPClient:
             },
         )
         if "error" in init_response:
-            raise SerenMCPError(init_response["error"].get("message", "seren-mcp initialize failed"))
+            raise SerenMCPError(init_response["error"].get("message", "MCP initialize failed"))
 
         self._notify("notifications/initialized", {})
 
@@ -109,24 +118,24 @@ class _SerenMCPClient:
 
     def _send(self, message: Dict[str, Any]) -> None:
         if self._process is None or self._process.stdin is None:
-            raise SerenMCPError("seren-mcp process is not started")
+            raise SerenMCPError("MCP process is not started")
         self._process.stdin.write(json.dumps(message) + "\n")
         self._process.stdin.flush()
 
     def _read_message(self, timeout: float) -> Optional[Dict[str, Any]]:
         if self._process is None or self._process.stdout is None:
-            raise SerenMCPError("seren-mcp process is not started")
+            raise SerenMCPError("MCP process is not started")
 
         ready, _, _ = select.select([self._process.stdout], [], [], timeout)
         if not ready:
             if self._process.poll() is not None:
-                raise SerenMCPError("seren-mcp exited unexpectedly")
+                raise SerenMCPError("MCP process exited unexpectedly")
             return None
 
         line = self._process.stdout.readline()
         if line == "":
             if self._process.poll() is not None:
-                raise SerenMCPError("seren-mcp closed stdout unexpectedly")
+                raise SerenMCPError("MCP process closed stdout unexpectedly")
             return None
 
         payload = line.strip()
@@ -412,7 +421,7 @@ class SerenDBStore:
 
         if not self.auto_create:
             raise SerenMCPError(
-                "Target SerenDB database not found via seren-mcp. "
+                "Target SerenDB database not found via MCP. "
                 "Set SERENDB_DATABASE/SERENDB_PROJECT_NAME or enable SERENDB_AUTO_CREATE=true."
             )
 

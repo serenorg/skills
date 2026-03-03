@@ -29,7 +29,7 @@ from serendb_store import SerenDBStore
 import pair_selector
 
 
-def _get_seren_api_key() -> str | None:
+def _get_seren_api_key() -> Optional[str]:
     return os.getenv("SEREN_API_KEY") or os.getenv("API_KEY")
 
 

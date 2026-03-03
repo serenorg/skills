@@ -16,6 +16,7 @@ description: "Generate operating, investing, and financing cash flow statements 
 
 - The `bank-statement-processing` skill must have completed at least one successful run with SerenDB sync enabled.
 - SerenDB must contain populated `wf_transactions` and `wf_txn_categories` tables.
+- If `WF_SERENDB_URL` is not set, the `seren` CLI must be installed and authenticated (`seren auth`) so DB URL auto-resolution can run.
 
 ## Safety Profile
 

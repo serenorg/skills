@@ -31,7 +31,7 @@ Use this skill when a user asks things like:
 ## Setup
 
 1. Copy `.env.example` to `.env`.
-2. Ensure `seren-mcp` is available locally and authenticated (Seren Desktop login context).
+2. Ensure `seren-mcp` is available locally and authenticated (Seren Desktop login context). Override with `SEREN_MCP_COMMAND` if needed.
 3. Set `SEREN_API_KEY` (required for Kraken account context and MCP auth when running standalone).
 4. Optionally set MCP DB target env vars (`SERENDB_PROJECT_NAME`, `SERENDB_DATABASE`, optional branch/region).
    - If `SERENDB_DATABASE` is not set, the router first tries to reuse an existing Kraken-related database.

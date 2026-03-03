@@ -10,7 +10,7 @@ import sys
 import uuid
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -204,7 +204,7 @@ def format_report(
     return "\n".join(lines)
 
 
-def _get_seren_api_key() -> str | None:
+def _get_seren_api_key() -> Optional[str]:
     return os.getenv("SEREN_API_KEY") or os.getenv("API_KEY")
 
 
@@ -239,12 +239,12 @@ def run_init_db(args: argparse.Namespace) -> int:
     try:
         store.ensure_schema()
     except Exception as exc:  # noqa: BLE001
-        print(f"Router persistence failed via seren-mcp: {exc}", file=sys.stderr)
+        print(f"Router persistence failed via MCP: {exc}", file=sys.stderr)
         return 1
     finally:
         store.close()
 
-    print("SerenDB schema initialized via seren-mcp.")
+    print("SerenDB schema initialized via MCP.")
     return 0
 
 
@@ -276,19 +276,37 @@ def run_recommend(args: argparse.Namespace) -> int:
     session_id = str(uuid.uuid4())
     profile_name = args.profile_name
 
-    try:
-        store = _build_store_from_env()
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
+    store: Optional[SerenDBStore] = None
+
+    def persist(context: str, fn) -> None:
+        nonlocal store
+        if store is None:
+            return
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING: Router persistence failed ({context}): {exc}", file=sys.stderr)
+            try:
+                store.close()
+            finally:
+                store = None
 
     try:
-        store.ensure_schema()
-        store.create_session(session_id, profile_name)
-        store.save_answers(session_id, answers)
-
         account_snapshot: Dict[str, Any] = {}
         api_key = _get_seren_api_key()
+
+        try:
+            store = _build_store_from_env()
+            store.ensure_schema()
+            store.create_session(session_id, profile_name)
+            store.save_answers(session_id, answers)
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING: Router persistence unavailable: {exc}", file=sys.stderr)
+            if store is not None:
+                try:
+                    store.close()
+                finally:
+                    store = None
 
         if api_key:
             kraken = KrakenClient(
@@ -299,33 +317,37 @@ def run_recommend(args: argparse.Namespace) -> int:
                     "KRAKEN_TRADING_FALLBACK_PUBLISHER",
                     os.getenv("KRAKEN_SPOT_PUBLISHER", "kraken-spot-trading"),
                 ),
-                kraken_api_key=os.getenv("KRAKEN_API_KEY"),
-                kraken_api_secret=os.getenv("KRAKEN_API_SECRET"),
             )
             account_snapshot = kraken.get_account_snapshot()
-            store.save_event(session_id, "account_snapshot", account_snapshot)
+            persist("account_snapshot", lambda: store.save_event(session_id, "account_snapshot", account_snapshot))
         else:
-            store.save_event(session_id, "account_snapshot", {"skipped": "SEREN_API_KEY not set"})
+            persist(
+                "account_snapshot_skipped",
+                lambda: store.save_event(session_id, "account_snapshot", {"skipped": "SEREN_API_KEY not set"}),
+            )
 
         engine = ModeEngine(config)
         ranked, mode_coverage = engine.recommend(answers)
 
         recommendations = [asdict(item) for item in ranked]
-        store.save_recommendations(session_id, recommendations)
+        persist("recommendations", lambda: store.save_recommendations(session_id, recommendations))
 
         primary_mode = recommendations[0]["mode_id"]
         action_plan = engine.build_action_plan(primary_mode)
-        store.save_actions(session_id, primary_mode, action_plan)
+        persist("actions", lambda: store.save_actions(session_id, primary_mode, action_plan))
 
-        store.save_event(session_id, "mode_coverage", mode_coverage)
-        store.save_event(
-            session_id,
+        persist("mode_coverage", lambda: store.save_event(session_id, "mode_coverage", mode_coverage))
+        persist(
             "final_result",
-            {
-                "primary_mode": primary_mode,
-                "backup_mode": recommendations[1]["mode_id"] if len(recommendations) > 1 else None,
-                "answers": answers,
-            },
+            lambda: store.save_event(
+                session_id,
+                "final_result",
+                {
+                    "primary_mode": primary_mode,
+                    "backup_mode": recommendations[1]["mode_id"] if len(recommendations) > 1 else None,
+                    "answers": answers,
+                },
+            ),
         )
 
         report = format_report(
@@ -347,10 +369,11 @@ def run_recommend(args: argparse.Namespace) -> int:
             }
             print(json.dumps(result_payload, indent=2))
     except Exception as exc:  # noqa: BLE001
-        print(f"Router persistence failed via seren-mcp: {exc}", file=sys.stderr)
+        print(f"Router execution failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        store.close()
+        if store is not None:
+            store.close()
 
     return 0
 

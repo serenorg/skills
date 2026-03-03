@@ -70,6 +70,20 @@ org/skill-name/
 └── .env.example           # Environment template (optional)
 ```
 
+## Runtime CLI Requirements
+
+Some skills invoke local CLIs at runtime in addition to Python packages:
+
+- `seren-mcp` for MCP-native persistence in:
+  - `kraken/grid-trader`
+  - `coinbase/grid-trader`
+  - `kraken/money-mode-router`
+- `seren` (authenticated via `seren auth`) for auto-resolving SerenDB URLs when `WF_SERENDB_URL` is not set in:
+  - `wellsfargo/net-worth-tracker`
+  - `wellsfargo/income-statement`
+  - `wellsfargo/cash-flow-statement`
+  - `wellsfargo/recurring-transactions`
+
 ## Adding a Skill
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.

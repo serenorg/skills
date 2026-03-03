@@ -11,6 +11,10 @@ description: "Track account balances from Wells Fargo statement data with option
 - generate balance sheet from wells fargo data
 - show net worth trajectory
 
+## Prerequisites
+
+- If `WF_SERENDB_URL` is not set, the `seren` CLI must be installed and authenticated (`seren auth`) so DB URL auto-resolution can run.
+
 ## Workflow Summary
 
 1. `resolve_serendb` uses `connector.serendb.connect`
