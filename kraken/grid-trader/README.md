@@ -42,16 +42,16 @@ pip install -r requirements.txt
 ```bash
 # Copy example env file
 cp .env.example .env
-
-# Add your Seren API key
-echo "SEREN_API_KEY=sb_your_key_here" > .env
 ```
 
-Desktop sidecar/keychain flow (recommended):
+Auth prerequisites:
+- Preferred: Seren Desktop session auth + Kraken publisher credentials in Settings -> Publisher MCPs
+- Fallback: run `auth_bootstrap`, then retry
+- Manual `SEREN_API_KEY` setup is unsupported
+
+Desktop sidecar/keychain flow:
 - Configure Kraken publisher credentials in Seren Desktop Settings → Publisher MCPs
 - Keep default publisher slug order (`kraken-trading`, fallback `kraken-spot-trading`)
-
-Get your Seren API key at: https://serendb.com
 
 Optional MCP-native SerenDB settings in `.env`:
 
@@ -231,13 +231,12 @@ SerenDB persistence is best-effort; if unavailable, trading continues with local
 
 ## Troubleshooting
 
-### "SEREN_API_KEY is required"
+### "Seren auth context missing"
 
-Create a `.env` file with your API key:
-
-```bash
-echo "SEREN_API_KEY=sb_your_key_here" > .env
-```
+Use the supported auth path:
+1. Confirm Seren Desktop session auth is active.
+2. If session auth is unavailable, run `auth_bootstrap`.
+3. Retry `python scripts/agent.py ...`.
 
 ### "Kraken publisher authentication failed"
 

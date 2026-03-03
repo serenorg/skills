@@ -20,11 +20,13 @@ Grid trading places buy and sell orders at regular price intervals (the "grid").
 
 ## Setup
 
-1. Configure Kraken publisher credentials in Seren Desktop Settings → Publisher MCPs (desktop sidecar/keychain flow)
-2. Copy `.env.example` to `.env` and set `SEREN_API_KEY`
-3. Copy `config.example.json` to `config.json` and configure your grid parameters
-4. Install dependencies: `pip install -r requirements.txt`
-5. Run: `python scripts/agent.py`
+1. Ensure Seren Desktop session auth is active and Kraken publisher credentials are configured in Settings -> Publisher MCPs.
+2. If session auth is unavailable, run `auth_bootstrap` and retry.
+3. Manual `SEREN_API_KEY` setup is unsupported.
+4. Copy `.env.example` to `.env` (optional for local overrides).
+5. Copy `config.example.json` to `config.json` and configure your grid parameters.
+6. Install dependencies: `pip install -r requirements.txt`.
+7. Run: `python scripts/agent.py`.
 
 ## SerenDB Persistence (MCP-native)
 

@@ -80,6 +80,11 @@ QUESTION_SET: List[Dict[str, Any]] = [
     },
 ]
 
+AUTH_BOOTSTRAP_REQUIRED_MESSAGE = (
+    "E_AUTH_BOOTSTRAP_REQUIRED: Seren auth context missing. "
+    "Use Desktop/MCP session auth, or run auth_bootstrap and retry."
+)
+
 
 def load_config(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
@@ -305,7 +310,11 @@ def run_recommend(args: argparse.Namespace) -> int:
             account_snapshot = kraken.get_account_snapshot()
             store.save_event(session_id, "account_snapshot", account_snapshot)
         else:
-            store.save_event(session_id, "account_snapshot", {"skipped": "SEREN_API_KEY not set"})
+            store.save_event(
+                session_id,
+                "account_snapshot",
+                {"skipped": AUTH_BOOTSTRAP_REQUIRED_MESSAGE},
+            )
 
         engine = ModeEngine(config)
         ranked, mode_coverage = engine.recommend(answers)

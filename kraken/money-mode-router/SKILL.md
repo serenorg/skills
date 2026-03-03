@@ -32,13 +32,14 @@ Use this skill when a user asks things like:
 
 1. Copy `.env.example` to `.env`.
 2. Ensure `seren-mcp` is available locally and authenticated (Seren Desktop login context).
-3. Set `SEREN_API_KEY` (required for Kraken account context and MCP auth when running standalone).
-4. Optionally set MCP DB target env vars (`SERENDB_PROJECT_NAME`, `SERENDB_DATABASE`, optional branch/region).
+3. Use auth precedence: Desktop/MCP session first, `auth_bootstrap` fallback.
+4. Manual `SEREN_API_KEY` setup is unsupported.
+5. Optionally set MCP DB target env vars (`SERENDB_PROJECT_NAME`, `SERENDB_DATABASE`, optional branch/region).
    - If `SERENDB_DATABASE` is not set, the router first tries to reuse an existing Kraken-related database.
    - If none exists, it auto-creates `krakent` project + `krakent` database (when `SERENDB_AUTO_CREATE=true`).
-5. Copy `config.example.json` to `config.json`.
-6. Install dependencies: `pip install -r requirements.txt`.
-7. Optional publisher overrides:
+6. Copy `config.example.json` to `config.json`.
+7. Install dependencies: `pip install -r requirements.txt`.
+8. Optional publisher overrides:
    - `KRAKEN_TRADING_PUBLISHER` (default `kraken-trading`)
    - `KRAKEN_TRADING_FALLBACK_PUBLISHER` (default `kraken-spot-trading`)
    - Legacy alias: `KRAKEN_SPOT_PUBLISHER` (treated as fallback)

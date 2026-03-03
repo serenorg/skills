@@ -28,6 +28,11 @@ from logger import GridTraderLogger
 from serendb_store import SerenDBStore
 import pair_selector
 
+AUTH_BOOTSTRAP_REQUIRED_MESSAGE = (
+    "E_AUTH_BOOTSTRAP_REQUIRED: Seren auth context missing. "
+    "Use Desktop/MCP session auth, or run auth_bootstrap and retry."
+)
+
 
 def _get_seren_api_key() -> str | None:
     return os.getenv("SEREN_API_KEY") or os.getenv("API_KEY")
@@ -43,7 +48,7 @@ def _env_flag(name: str, default: bool = True) -> bool:
 def _build_store_from_env() -> SerenDBStore:
     api_key = _get_seren_api_key()
     if not api_key:
-        raise ValueError("SEREN_API_KEY is required (or API_KEY when launched by Seren Desktop).")
+        raise ValueError(AUTH_BOOTSTRAP_REQUIRED_MESSAGE)
 
     return SerenDBStore(
         api_key=api_key,
@@ -75,9 +80,9 @@ class KrakenGridTrader:
         self.is_dry_run = dry_run
 
         # Initialize clients
-        api_key = os.getenv('SEREN_API_KEY')
+        api_key = _get_seren_api_key()
         if not api_key:
-            raise ValueError("SEREN_API_KEY environment variable is required")
+            raise ValueError(AUTH_BOOTSTRAP_REQUIRED_MESSAGE)
 
         self.seren = SerenClient(api_key=api_key)
         self.logger = GridTraderLogger(logs_dir='logs')
