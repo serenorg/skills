@@ -1,0 +1,17 @@
+{
+  "status": "error",
+  "skill": "euler-base-vault-bot",
+  "error_code": "connector_failure",
+  "connector": "rpc_base",
+  "message": "Connector call failed during smoke test.",
+  "connectors": {
+    "rpc_base": {
+      "post": {
+        "status": "error",
+        "connector": "rpc_base",
+        "action": "post",
+        "error_code": "connector_failure"
+      }
+    }
+  }
+}

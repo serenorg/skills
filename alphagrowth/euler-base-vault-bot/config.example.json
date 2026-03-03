@@ -1,0 +1,15 @@
+{
+  "connectors": [
+    "rpc_base"
+  ],
+  "dry_run": true,
+  "inputs": {
+    "action": "status",
+    "compound_threshold_usd": 10,
+    "deposit_amount_usdc": 0,
+    "live_mode": false,
+    "wallet_mode": "local",
+    "withdraw_amount_usdc": 0
+  },
+  "skill": "euler-base-vault-bot"
+}
