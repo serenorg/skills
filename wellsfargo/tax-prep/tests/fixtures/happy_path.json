@@ -1,0 +1,33 @@
+{
+  "status": "ok",
+  "skill": "tax-prep",
+  "workflow_step_count": 7,
+  "dry_run": false,
+  "inputs": {
+    "end": "",
+    "filing_type": "schedule-c",
+    "out": "artifacts/tax-prep",
+    "skip_persist": false,
+    "start": "",
+    "tax_year": 2025
+  },
+  "connectors": {
+    "serendb": {
+      "connect": {
+        "status": "ok",
+        "connector": "serendb",
+        "action": "connect"
+      },
+      "query": {
+        "status": "ok",
+        "connector": "serendb",
+        "action": "query"
+      },
+      "upsert": {
+        "status": "ok",
+        "connector": "serendb",
+        "action": "upsert"
+      }
+    }
+  }
+}

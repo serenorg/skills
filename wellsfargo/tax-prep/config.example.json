@@ -1,0 +1,15 @@
+{
+  "connectors": [
+    "serendb"
+  ],
+  "dry_run": false,
+  "inputs": {
+    "end": "",
+    "filing_type": "schedule-c",
+    "out": "artifacts/tax-prep",
+    "skip_persist": false,
+    "start": "",
+    "tax_year": 2025
+  },
+  "skill": "tax-prep"
+}
