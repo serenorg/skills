@@ -1,0 +1,33 @@
+{
+  "status": "ok",
+  "skill": "budget-tracker",
+  "workflow_step_count": 7,
+  "dry_run": false,
+  "inputs": {
+    "budget_file": "config/budgets.json",
+    "end": "",
+    "months": 3,
+    "out": "artifacts/budget-tracker",
+    "skip_persist": false,
+    "start": ""
+  },
+  "connectors": {
+    "serendb": {
+      "connect": {
+        "status": "ok",
+        "connector": "serendb",
+        "action": "connect"
+      },
+      "query": {
+        "status": "ok",
+        "connector": "serendb",
+        "action": "query"
+      },
+      "upsert": {
+        "status": "ok",
+        "connector": "serendb",
+        "action": "upsert"
+      }
+    }
+  }
+}

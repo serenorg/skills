@@ -1,0 +1,15 @@
+{
+  "connectors": [
+    "serendb"
+  ],
+  "dry_run": false,
+  "inputs": {
+    "budget_file": "config/budgets.json",
+    "end": "",
+    "months": 3,
+    "out": "artifacts/budget-tracker",
+    "skip_persist": false,
+    "start": ""
+  },
+  "skill": "budget-tracker"
+}
