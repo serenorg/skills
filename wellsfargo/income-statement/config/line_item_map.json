@@ -1,0 +1,77 @@
+{
+  "_comment": "Maps wf_txn_categories.category values to income statement sections and line items.",
+  "income": {
+    "payroll": {
+      "label": "Salary & Wages",
+      "keywords": ["payroll", "direct deposit", "salary", "wages"]
+    },
+    "interest_income": {
+      "label": "Interest Income",
+      "keywords": ["interest earned", "interest payment", "savings interest"]
+    },
+    "transfers_in": {
+      "label": "Transfers In",
+      "keywords": ["transfer from", "zelle received", "venmo credit", "cashapp"]
+    },
+    "refunds": {
+      "label": "Refunds & Reimbursements",
+      "keywords": ["refund", "reimbursement", "credit adjustment"]
+    },
+    "other_income": {
+      "label": "Other Income",
+      "keywords": []
+    }
+  },
+  "expenses": {
+    "housing": {
+      "label": "Housing & Rent",
+      "keywords": ["rent", "mortgage", "hoa", "property"]
+    },
+    "utilities": {
+      "label": "Utilities",
+      "keywords": ["electric", "gas", "water", "sewer", "trash", "internet", "phone", "cable"]
+    },
+    "groceries": {
+      "label": "Groceries",
+      "keywords": ["grocery", "supermarket", "whole foods", "trader joe", "safeway", "kroger"]
+    },
+    "dining": {
+      "label": "Dining & Restaurants",
+      "keywords": ["restaurant", "dining", "doordash", "uber eats", "grubhub"]
+    },
+    "transportation": {
+      "label": "Transportation",
+      "keywords": ["gas station", "fuel", "uber", "lyft", "parking", "toll", "transit"]
+    },
+    "insurance": {
+      "label": "Insurance",
+      "keywords": ["insurance", "premium", "geico", "allstate", "state farm"]
+    },
+    "healthcare": {
+      "label": "Healthcare",
+      "keywords": ["medical", "doctor", "pharmacy", "hospital", "dental", "vision"]
+    },
+    "subscriptions": {
+      "label": "Subscriptions & Memberships",
+      "keywords": ["netflix", "spotify", "hulu", "gym", "membership", "subscription"]
+    },
+    "shopping": {
+      "label": "Shopping & Retail",
+      "keywords": ["amazon", "target", "walmart", "retail"]
+    },
+    "transfers_out": {
+      "label": "Transfers Out",
+      "keywords": ["transfer to", "zelle sent", "venmo debit", "wire transfer"]
+    },
+    "fees": {
+      "label": "Bank Fees & Charges",
+      "keywords": ["fee", "service charge", "overdraft", "atm fee"]
+    },
+    "other_expense": {
+      "label": "Other Expenses",
+      "keywords": []
+    }
+  },
+  "uncategorized_default_section": "expenses",
+  "uncategorized_default_line_item": "other_expense"
+}
