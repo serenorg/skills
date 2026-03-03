@@ -1,0 +1,92 @@
+{
+  "_comment": "Maps wf_txn_categories.category values to cash flow activity sections.",
+  "operating": {
+    "payroll": {
+      "label": "Salary & Wages Received",
+      "direction": "inflow"
+    },
+    "interest_income": {
+      "label": "Interest Received",
+      "direction": "inflow"
+    },
+    "refunds": {
+      "label": "Refunds Received",
+      "direction": "inflow"
+    },
+    "housing": {
+      "label": "Rent / Mortgage Payments",
+      "direction": "outflow"
+    },
+    "utilities": {
+      "label": "Utility Payments",
+      "direction": "outflow"
+    },
+    "groceries": {
+      "label": "Grocery Purchases",
+      "direction": "outflow"
+    },
+    "dining": {
+      "label": "Dining & Restaurants",
+      "direction": "outflow"
+    },
+    "transportation": {
+      "label": "Transportation Costs",
+      "direction": "outflow"
+    },
+    "insurance": {
+      "label": "Insurance Premiums",
+      "direction": "outflow"
+    },
+    "healthcare": {
+      "label": "Healthcare Expenses",
+      "direction": "outflow"
+    },
+    "subscriptions": {
+      "label": "Subscriptions & Memberships",
+      "direction": "outflow"
+    },
+    "shopping": {
+      "label": "Shopping & Retail",
+      "direction": "outflow"
+    },
+    "fees": {
+      "label": "Bank Fees & Charges",
+      "direction": "outflow"
+    }
+  },
+  "investing": {
+    "investment_purchase": {
+      "label": "Investment Purchases",
+      "direction": "outflow"
+    },
+    "investment_sale": {
+      "label": "Investment Sales / Proceeds",
+      "direction": "inflow"
+    },
+    "dividend_income": {
+      "label": "Dividends Received",
+      "direction": "inflow"
+    }
+  },
+  "financing": {
+    "transfers_in": {
+      "label": "Transfers In (from other accounts)",
+      "direction": "inflow"
+    },
+    "transfers_out": {
+      "label": "Transfers Out (to other accounts)",
+      "direction": "outflow"
+    },
+    "loan_payment": {
+      "label": "Loan Payments",
+      "direction": "outflow"
+    },
+    "loan_proceeds": {
+      "label": "Loan Proceeds Received",
+      "direction": "inflow"
+    }
+  },
+  "uncategorized_default_activity": "operating",
+  "uncategorized_default_inflow_key": "other_operating_inflow",
+  "uncategorized_default_outflow_key": "other_operating_outflow"
+}
