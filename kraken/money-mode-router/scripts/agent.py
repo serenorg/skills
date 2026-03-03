@@ -294,7 +294,11 @@ def run_recommend(args: argparse.Namespace) -> int:
             kraken = KrakenClient(
                 api_key=api_key,
                 base_url=os.getenv("SEREN_GATEWAY_BASE_URL", "https://api.serendb.com"),
-                publisher=os.getenv("KRAKEN_SPOT_PUBLISHER", "kraken-spot-trading"),
+                publisher=os.getenv("KRAKEN_TRADING_PUBLISHER", "kraken-trading"),
+                fallback_publisher=os.getenv(
+                    "KRAKEN_TRADING_FALLBACK_PUBLISHER",
+                    os.getenv("KRAKEN_SPOT_PUBLISHER", "kraken-spot-trading"),
+                ),
                 kraken_api_key=os.getenv("KRAKEN_API_KEY"),
                 kraken_api_secret=os.getenv("KRAKEN_API_SECRET"),
             )
