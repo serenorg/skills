@@ -1,5 +1,5 @@
 ---
-name: wellsfargo-bank-statement-processing
+name: bank-statement-processing
 description: "Wells Fargo bank statement retrieval skill for Seren Desktop: runtime-authenticated PDF download, transaction parsing, and masked SerenDB sync."
 ---
 
