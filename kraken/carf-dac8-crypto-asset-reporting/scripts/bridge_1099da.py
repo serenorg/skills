@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 from pathlib import Path
-import sys
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
 from typing import Any
 
 from schemas.carf_common import NormalizedTransaction, normalize_asset, parse_timestamp
@@ -40,6 +35,19 @@ def parse_1099da_csv(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _key_asset(row: dict[str, Any]) -> str:
+    return str(row.get("asset_disposed") or row.get("asset_acquired") or "").upper()
+
+
+def _parse_iso(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def merge_bridge_records(
     *,
     primary_records: list[dict[str, Any]],
@@ -48,33 +56,35 @@ def merge_bridge_records(
     quantity_tolerance_pct: float,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     merged = list(primary_records)
-    dual_reported = 0
+    consumed_primary: set[int] = set()
 
+    asset_index: dict[str, list[int]] = {}
+    for idx, row in enumerate(merged):
+        asset = _key_asset(row)
+        if asset:
+            asset_index.setdefault(asset, []).append(idx)
+
+    dual_reported = 0
     for bridge in bridge_records:
         matched = False
-        for primary in merged:
-            same_asset = (
-                str(primary.get("asset_disposed", "")).upper()
-                == str(bridge.get("asset_disposed", "")).upper()
-            )
-            if not same_asset:
-                continue
+        candidates = asset_index.get(_key_asset(bridge), [])
 
-            primary_qty = float(primary.get("quantity_disposed", 0.0) or 0.0)
-            bridge_qty = float(bridge.get("quantity_disposed", 0.0) or 0.0)
+        for idx in candidates:
+            if idx in consumed_primary:
+                continue
+            primary = merged[idx]
+            primary_qty = float(primary.get("quantity_disposed", 0.0) or primary.get("quantity_acquired", 0.0) or 0.0)
+            bridge_qty = float(bridge.get("quantity_disposed", 0.0) or bridge.get("quantity_acquired", 0.0) or 0.0)
+
             qty_base = max(abs(primary_qty), abs(bridge_qty), 1.0)
             qty_pct = abs(primary_qty - bridge_qty) / qty_base * 100.0
             if qty_pct > quantity_tolerance_pct:
                 continue
 
-            left = str(primary.get("timestamp", ""))
-            right = str(bridge.get("timestamp", ""))
+            left = _parse_iso(str(primary.get("timestamp", "")))
+            right = _parse_iso(str(bridge.get("timestamp", "")))
             if left and right:
-                from datetime import datetime
-
-                p = datetime.fromisoformat(left.replace("Z", "+00:00"))
-                b = datetime.fromisoformat(right.replace("Z", "+00:00"))
-                ts_delta = abs((p - b).total_seconds())
+                ts_delta = abs((left - right).total_seconds())
                 if ts_delta > timestamp_tolerance_seconds:
                     continue
 
@@ -85,12 +95,17 @@ def merge_bridge_records(
                     primary.get("source_format", "CARF"),
                     bridge.get("source_format", "1099DA"),
                 ]
+            consumed_primary.add(idx)
             matched = True
             dual_reported += 1
             break
 
         if not matched:
             merged.append(bridge)
+            idx = len(merged) - 1
+            asset = _key_asset(bridge)
+            if asset:
+                asset_index.setdefault(asset, []).append(idx)
 
     return merged, {
         "bridge_total": len(bridge_records),

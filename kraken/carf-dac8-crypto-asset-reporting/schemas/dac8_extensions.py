@@ -5,6 +5,15 @@ DAC8_EMONEY_TOKENS = {
     "EUROC",
     "USDE",
     "EURI",
+    "USDT",
+    "USDC",
+    "DAI",
+    "BUSD",
+    "TUSD",
+    "FRAX",
+    "GUSD",
+    "USDP",
+    "PYUSD",
 }
 
 

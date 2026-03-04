@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from pathlib import Path
-import sys
+from typing import Any
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+from defusedxml import ElementTree as DET
 
 from schemas.carf_common import NormalizedTransaction, normalize_asset, parse_timestamp
 from schemas.carf_exchange import canonical_exchange_type
@@ -18,7 +15,7 @@ def _local(tag: str) -> str:
     return tag
 
 
-def _find_text(node: ET.Element, names: list[str]) -> str:
+def _find_text(node: Any, names: list[str]) -> str:
     wanted = {value.lower() for value in names}
     for child in list(node):
         if _local(child.tag).lower() in wanted and child.text:
@@ -26,34 +23,52 @@ def _find_text(node: ET.Element, names: list[str]) -> str:
     return ""
 
 
-def _find_anywhere(root: ET.Element, names: list[str]) -> str:
+def _find_direct_child(parent: Any, names: list[str]) -> Any | None:
     wanted = {value.lower() for value in names}
-    for element in root.iter():
-        if _local(element.tag).lower() in wanted and element.text:
-            return element.text.strip()
-    return ""
+    for child in list(parent):
+        if _local(child.tag).lower() in wanted:
+            return child
+    return None
 
 
-def parse_carf_xml(path: str | Path) -> tuple[dict[str, str], list[dict[str, object]]]:
-    file_path = Path(path)
-    tree = ET.parse(file_path)
-    root = tree.getroot()
+def _message_spec(root: Any) -> Any:
+    node = _find_direct_child(root, ["MessageSpec", "Header", "ReportHeader"])
+    return node if node is not None else root
 
-    metadata = {
-        "report_id": _find_anywhere(root, ["MessageRefId", "ReportId", "MessageReferenceId"])
-        or file_path.stem,
-        "casp_name": _find_anywhere(root, ["CaspName", "ReportingFI", "SendingCompanyName"])
-        or "unknown_casp",
-        "casp_jurisdiction": _find_anywhere(
-            root,
-            ["CaspJurisdiction", "Jurisdiction", "SendingCompanyIN", "CountryCode"],
-        )
-        or "UNKNOWN",
+
+def _metadata_from_root(root: Any, file_path: Path) -> dict[str, str]:
+    msg = _message_spec(root)
+    report_id = _find_text(msg, ["MessageRefId", "ReportId", "MessageReferenceId"]) or file_path.stem
+    casp_name = _find_text(msg, ["CaspName", "ReportingFI", "SendingCompanyName"]) or "unknown_casp"
+    casp_j = _find_text(msg, ["CaspJurisdiction", "SendingCompanyIN", "CountryCode"]) or "UNKNOWN"
+
+    year = _find_text(msg, ["ReportingYear", "TaxYear", "Year"])
+    if not year:
+        meta_ts = parse_timestamp(_find_text(msg, ["Timestamp", "CreatedAt"]))
+        guess = meta_ts.year if meta_ts else 2026
+        year = str(max(1900, min(2100, guess)))
+
+    user_tin = _find_text(msg, ["UserTINHash", "TinHash", "TINHash"])
+
+    return {
+        "report_id": report_id,
+        "casp_name": casp_name,
+        "casp_jurisdiction": casp_j,
+        "reporting_year": year,
+        "user_tin_hash": user_tin,
         "report_format": "CARF_XML",
         "source_file": str(file_path),
     }
 
-    tx_nodes: list[ET.Element] = []
+
+def parse_carf_xml(path: str | Path) -> tuple[dict[str, str], list[dict[str, object]]]:
+    file_path = Path(path)
+    tree = DET.parse(file_path)
+    root = tree.getroot()
+
+    metadata = _metadata_from_root(root, file_path)
+
+    tx_nodes: list[Any] = []
     for node in root.iter():
         name = _local(node.tag).lower()
         if name in {"transactionreport", "transaction", "cryptotransaction"}:
@@ -69,7 +84,7 @@ def parse_carf_xml(path: str | Path) -> tuple[dict[str, str], list[dict[str, obj
         sub_type = _find_text(node, ["SubType", "TransactionSubType", "CarfCode"]).upper()
 
         acquired_asset = normalize_asset(
-            _find_text(node, ["AssetAcquired", "AssetIn", "BuyAsset", "ReceivedAsset"]) 
+            _find_text(node, ["AssetAcquired", "AssetIn", "BuyAsset", "ReceivedAsset"])
         )
         disposed_asset = normalize_asset(
             _find_text(node, ["AssetDisposed", "AssetOut", "SellAsset", "SentAsset"])
@@ -109,9 +124,11 @@ def parse_carf_xml(path: str | Path) -> tuple[dict[str, str], list[dict[str, obj
             jurisdiction=str(jurisdiction),
             casp_name=str(metadata["casp_name"]),
             source_format="CARF_XML",
-            raw_data={"source_node": _local(node.tag)},
+            raw_data={"source_node": _local(node.tag), "report_id": metadata["report_id"]},
         )
-        records.append(tx.as_dict())
+        row = tx.as_dict()
+        row["report_id"] = metadata["report_id"]
+        records.append(row)
 
     metadata["total_records"] = str(len(records))
     return metadata, records

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,12 @@ from typing import Any
 from bridge_1099da import merge_bridge_records, parse_1099da_csv
 from carf_parser import parse_carf_xml
 from csv_normalizer import parse_casp_csv, parse_user_csv
+from currency_normalizer import normalize_fiat_values
 from dac8_parser import parse_dac8_xml
+from enrichment import enrich_tax_treatments, resolve_cost_basis
 from jurisdiction_detector import detect_jurisdictions
 from logger import AuditLogger
+from notifications import build_notifications
 from reconciliation_engine import ToleranceConfig, reconcile_transactions
 from report_generator import generate_reconciliation_outputs
 from seren_api_client import SerenAPIError, SerenAPIKeyManager
@@ -53,6 +57,7 @@ def _default_config() -> dict[str, Any]:
             "quantity_tolerance_pct": 0.5,
             "fiat_tolerance_pct": 1.0,
             "home_currency": "USD",
+            "cost_basis_method": "fifo",
             "enable_dac8_extensions": True,
             "enable_transfer_tracking": True,
             "enable_bridge_1099da": True,
@@ -98,6 +103,7 @@ def validate_config(config: dict[str, Any]) -> list[str]:
     qty_pct = float(inputs.get("quantity_tolerance_pct", -1.0))
     fiat_pct = float(inputs.get("fiat_tolerance_pct", -1.0))
     materiality = float(config.get("cpa", {}).get("materiality_threshold_usd", 0.0))
+    basis_method = str(inputs.get("cost_basis_method", "fifo")).lower()
 
     if ts_hours < 1 or ts_hours > 72:
         errors.append("inputs.timestamp_tolerance_hours must be between 1 and 72")
@@ -107,6 +113,8 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("inputs.fiat_tolerance_pct must be between 0 and 20")
     if materiality < 0:
         errors.append("cpa.materiality_threshold_usd must be >= 0")
+    if basis_method not in {"fifo", "lifo", "specific"}:
+        errors.append("inputs.cost_basis_method must be one of: fifo, lifo, specific")
 
     return errors
 
@@ -157,6 +165,31 @@ def _persist_local_export(*, session_id: str, payload: dict[str, Any]) -> str:
     path = out / f"session_{session_id}.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return str(path)
+
+
+def _report_formats(report_metadatas: list[dict[str, str]]) -> list[str]:
+    return sorted(
+        {
+            str(item.get("report_format", "")).strip()
+            for item in report_metadatas
+            if item.get("report_format")
+        }
+    )
+
+
+def _tax_treatment_breakdown(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(str(row.get("tax_treatment") or "unknown") for row in rows)
+    return {key: int(value) for key, value in sorted(counts.items())}
+
+
+def _year_from_iso(value: str, default_year: int = 2026) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return str(default_year)
+    try:
+        return str(datetime.fromisoformat(raw.replace("Z", "+00:00")).year)
+    except ValueError:
+        return str(default_year)
 
 
 def run_once(
@@ -226,6 +259,8 @@ def run_once(
     store.create_session(session_id, config)
 
     logger.log_event("run_started", {"session_id": session_id, "carf_reports": len(carf_reports)})
+    jurisdictions: dict[str, Any] = {}
+    report_metadatas: list[dict[str, str]] = []
 
     try:
         input_cfg = config["inputs"]
@@ -233,8 +268,9 @@ def run_once(
         qty_tolerance_pct = float(input_cfg["quantity_tolerance_pct"])
         fiat_tolerance_pct = float(input_cfg["fiat_tolerance_pct"])
         materiality = float(config["cpa"]["materiality_threshold_usd"])
+        home_currency = str(input_cfg.get("home_currency", "USD")).upper().strip() or "USD"
+        cost_basis_method = str(input_cfg.get("cost_basis_method", "fifo")).lower()
 
-        report_metadatas: list[dict[str, str]] = []
         carf_rows: list[dict[str, Any]] = []
 
         for report in carf_reports:
@@ -242,9 +278,15 @@ def run_once(
                 report,
                 enable_dac8_extensions=bool(input_cfg.get("enable_dac8_extensions", True)),
             )
+            report_id = str(metadata.get("report_id") or Path(report).stem)
+            metadata["report_id"] = report_id
+
+            for row in rows:
+                row["report_id"] = str(row.get("report_id") or report_id)
+
             report_metadatas.append(metadata)
             carf_rows.extend(rows)
-            store.persist_raw_report(session_id, metadata)
+            store.persist_raw_report(metadata)
 
         user_rows: list[dict[str, Any]] = []
         for file_path in user_records:
@@ -253,6 +295,10 @@ def run_once(
         bridge_stats = {"bridge_total": 0, "dual_reported": 0, "bridge_added": 0}
         if bridge_1099da_path and bool(input_cfg.get("enable_bridge_1099da", True)):
             bridge_rows = parse_1099da_csv(bridge_1099da_path)
+            bridge_report_id = f"{session_id}-1099da"
+            for row in bridge_rows:
+                row["report_id"] = bridge_report_id
+
             carf_rows, bridge_stats = merge_bridge_records(
                 primary_records=carf_rows,
                 bridge_records=bridge_rows,
@@ -260,7 +306,36 @@ def run_once(
                 quantity_tolerance_pct=qty_tolerance_pct,
             )
 
-        jurisdictions = detect_jurisdictions(report_metadatas=report_metadatas, normalized_records=carf_rows + user_rows)
+            if bridge_rows:
+                bridge_meta = {
+                    "report_id": bridge_report_id,
+                    "casp_name": str(bridge_rows[0].get("casp_name", "1099DA_BROKER")),
+                    "casp_jurisdiction": "US",
+                    "reporting_year": _year_from_iso(str(bridge_rows[0].get("timestamp", ""))),
+                    "user_tin_hash": "",
+                    "report_format": "1099DA_CSV",
+                    "source_file": str(bridge_1099da_path),
+                    "total_records": str(len(bridge_rows)),
+                }
+                report_metadatas.append(bridge_meta)
+                store.persist_raw_report(bridge_meta)
+
+        # Step 2 enrichment: normalize fiat values, classify tax treatment, then resolve cost basis.
+        carf_rows = normalize_fiat_values(rows=carf_rows, home_currency=home_currency)
+        user_rows = normalize_fiat_values(rows=user_rows, home_currency=home_currency)
+        carf_rows = enrich_tax_treatments(carf_rows)
+        carf_rows = resolve_cost_basis(carf_rows, method=cost_basis_method)
+
+        carf_by_txid = {
+            str(row.get("transaction_id", "")): row
+            for row in carf_rows
+            if str(row.get("transaction_id", ""))
+        }
+
+        jurisdictions = detect_jurisdictions(
+            report_metadatas=report_metadatas,
+            normalized_records=carf_rows + user_rows,
+        )
 
         recon = reconcile_transactions(
             carf_records=carf_rows,
@@ -273,11 +348,25 @@ def run_once(
             materiality_threshold_usd=materiality,
         )
 
+        for match in recon["matches"]:
+            carf_txid = str(match.get("carf_transaction_id", "") or "")
+            if not carf_txid:
+                continue
+            carf_row = carf_by_txid.get(carf_txid)
+            if not carf_row:
+                continue
+            match["carf_sub_type"] = str(carf_row.get("sub_type", ""))
+            match["carf_tax_treatment"] = str(carf_row.get("tax_treatment", ""))
+            match["gain_loss_home"] = float(carf_row.get("gain_loss_home", 0.0) or 0.0)
+            match["holding_period_days"] = carf_row.get("holding_period_days")
+
         transfer_summary = {
             "carf_transfer_count": 0,
             "user_transfer_count": 0,
             "matched_transfer_count": 0,
             "unmatched_transfer_ids": [],
+            "potential_wash_sale_ids": [],
+            "potential_transfer_as_disposition_ids": [],
         }
         if bool(input_cfg.get("enable_transfer_tracking", True)):
             transfer_summary = reconcile_transfers(
@@ -289,14 +378,28 @@ def run_once(
 
         summary = {
             **recon["summary"],
+            "home_currency": home_currency,
+            "tax_treatment_breakdown": _tax_treatment_breakdown(carf_rows),
+            "currency_conversion_missing_count": int(
+                sum(
+                    1
+                    for row in (carf_rows + user_rows)
+                    if bool(row.get("currency_conversion_missing"))
+                )
+            ),
             "bridge": bridge_stats,
             "transfer_tracking": transfer_summary,
             "jurisdictions": jurisdictions,
         }
 
-        store.persist_carf_transactions(session_id, carf_rows)
-        store.persist_user_transactions(session_id, user_rows)
-        store.persist_reconciliation_results(session_id, recon["matches"])
+        carf_id_map = store.persist_carf_transactions(session_id, carf_rows)
+        user_id_map = store.persist_user_transactions(session_id, user_rows)
+        store.persist_reconciliation_results(
+            session_id,
+            recon["matches"],
+            carf_id_map=carf_id_map,
+            user_id_map=user_id_map,
+        )
 
         output_paths = generate_reconciliation_outputs(
             session_id=session_id,
@@ -308,27 +411,43 @@ def run_once(
             cpa_template_path="templates/cpa_escalation.md",
         )
 
+        notifications = build_notifications(summary=summary, outputs=output_paths)
+
         payload = {
             "status": "ok",
             "skill": SKILL_NAME,
             "session_id": session_id,
             "seren_api_key_present": bool(seren_api_key),
             "report_count": len(report_metadatas),
+            "report_formats": _report_formats(report_metadatas),
             "summary": summary,
             "outputs": output_paths,
+            "notifications": notifications,
             "disclaimer": IMPORTANT_DISCLAIMER,
         }
 
         if bool(config.get("runtime", {}).get("save_json_export", True)):
             payload["local_export"] = _persist_local_export(session_id=session_id, payload=payload)
 
-        store.close_session(session_id, "completed", summary)
+        store.close_session(
+            session_id,
+            "completed",
+            summary,
+            jurisdictions=jurisdictions,
+            report_formats=_report_formats(report_metadatas),
+        )
         logger.log_event("run_completed", {"session_id": session_id, "summary": summary})
         return payload
 
     except Exception as exc:  # pragma: no cover - covered by smoke failure path
         logger.log_error("run_once", str(exc), {"session_id": session_id})
-        store.close_session(session_id, "error", {"message": str(exc)})
+        store.close_session(
+            session_id,
+            "error",
+            {"message": str(exc)},
+            jurisdictions=jurisdictions,
+            report_formats=_report_formats(report_metadatas),
+        )
         return {
             "status": "error",
             "skill": SKILL_NAME,

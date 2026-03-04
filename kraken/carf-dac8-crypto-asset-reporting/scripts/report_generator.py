@@ -20,16 +20,29 @@ def _top_discrepancies(rows: list[dict[str, Any]], limit: int = 10) -> str:
     lines: list[str] = []
     for row in candidates[:limit]:
         lines.append(
-            "- carf=`{}` user=`{}` status=`{}` type=`{}` resolution=`{}` delta_fiat=`{}`".format(
+            "- carf=`{}` user=`{}` status=`{}` type=`{}` treatment=`{}` resolution=`{}` delta_fiat=`{}`".format(
                 row.get("carf_transaction_id", ""),
                 row.get("user_transaction_id", ""),
                 row.get("match_status", ""),
                 row.get("discrepancy_type", ""),
+                row.get("carf_tax_treatment", ""),
                 row.get("resolution", ""),
                 row.get("delta_fiat_value", 0),
             )
         )
     return "\n".join(lines)
+
+
+def _tax_treatment_summary(rows: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for row in rows:
+        treatment = str(row.get("carf_tax_treatment", "")).strip()
+        if not treatment:
+            continue
+        counts[treatment] = counts.get(treatment, 0) + 1
+    if not counts:
+        return "- none"
+    return "\n".join(f"- {name}: {count}" for name, count in sorted(counts.items()))
 
 
 def generate_reconciliation_outputs(
@@ -55,6 +68,7 @@ def generate_reconciliation_outputs(
             "SUMMARY": json.dumps(summary, indent=2, sort_keys=True),
             "JURISDICTIONS": json.dumps(jurisdictions, indent=2, sort_keys=True),
             "TOP_DISCREPANCIES": _top_discrepancies(matches),
+            "TAX_TREATMENT_SUMMARY": _tax_treatment_summary(matches),
         },
     )
 

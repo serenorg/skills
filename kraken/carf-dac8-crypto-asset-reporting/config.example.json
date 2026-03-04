@@ -4,6 +4,7 @@
     "quantity_tolerance_pct": 0.5,
     "fiat_tolerance_pct": 1.0,
     "home_currency": "USD",
+    "cost_basis_method": "fifo",
     "enable_dac8_extensions": true,
     "enable_transfer_tracking": true,
     "enable_bridge_1099da": true

@@ -15,6 +15,10 @@ Generated: {{GENERATED_AT}}
 
 {{TOP_DISCREPANCIES}}
 
+## CARF Tax Treatment Summary
+
+{{TAX_TREATMENT_SUMMARY}}
+
 ## Notes
 
 - Results are deterministic given the same input and tolerance configuration.

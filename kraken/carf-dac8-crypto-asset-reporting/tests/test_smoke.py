@@ -46,5 +46,7 @@ def test_run_once_with_bridge_mode(tmp_path: Path, monkeypatch) -> None:
     assert result["status"] == "ok"
     assert result["summary"]["total_carf_records"] >= 3
     assert result["summary"]["bridge"]["bridge_total"] == 1
+    assert "CARF_XML" in result["report_formats"]
+    assert result["notifications"]
     assert Path(result["outputs"]["report"]).exists()
     assert Path(result["outputs"]["summary_json"]).exists()

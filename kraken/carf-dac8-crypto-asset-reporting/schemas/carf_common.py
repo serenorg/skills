@@ -9,7 +9,7 @@ def normalize_asset(value: str | None) -> str:
     if not value:
         return ""
     token = str(value).strip().upper()
-    return token.replace(" ", "").replace("/", "-")
+    return token.replace(" ", "")
 
 
 def parse_timestamp(value: str | None) -> datetime | None:

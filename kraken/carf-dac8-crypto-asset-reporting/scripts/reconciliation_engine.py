@@ -66,6 +66,28 @@ def _candidate_assets(row: dict[str, Any]) -> tuple[str, str]:
     )
 
 
+def _asset_keys(row: dict[str, Any]) -> set[str]:
+    return {token for token in _candidate_assets(row) if token}
+
+
+def _fiat_home(row: dict[str, Any]) -> float:
+    if "fiat_value_home" in row:
+        return float(row.get("fiat_value_home", 0.0) or 0.0)
+    return float(row.get("fiat_value", 0.0) or 0.0)
+
+
+def _build_user_index(user_records: list[dict[str, Any]]) -> dict[str, list[int]]:
+    index: dict[str, list[int]] = {}
+    for idx, row in enumerate(user_records):
+        keys = _asset_keys(row)
+        if not keys:
+            index.setdefault("_EMPTY", []).append(idx)
+            continue
+        for key in keys:
+            index.setdefault(key, []).append(idx)
+    return index
+
+
 def reconcile_transactions(
     *,
     carf_records: list[dict[str, Any]],
@@ -75,6 +97,7 @@ def reconcile_transactions(
 ) -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
     unmatched_user_indices = set(range(len(user_records)))
+    user_index = _build_user_index(user_records)
 
     for carf in carf_records:
         best_index = None
@@ -83,19 +106,24 @@ def reconcile_transactions(
 
         carf_ts = _parse_ts(str(carf.get("timestamp", "")))
         carf_qty = float(carf.get("quantity_disposed", 0.0) or carf.get("quantity_acquired", 0.0) or 0.0)
-        carf_value = float(carf.get("fiat_value", 0.0) or 0.0)
-        carf_assets = _candidate_assets(carf)
+        carf_value = _fiat_home(carf)
+        carf_assets = _asset_keys(carf)
 
-        for idx in list(unmatched_user_indices):
-            user = user_records[idx]
-            user_assets = _candidate_assets(user)
-            same_asset = bool(set(asset for asset in carf_assets if asset) & set(asset for asset in user_assets if asset))
-            if not same_asset:
+        candidate_indices: set[int] = set()
+        if carf_assets:
+            for asset in carf_assets:
+                candidate_indices.update(user_index.get(asset, []))
+        else:
+            candidate_indices.update(user_index.get("_EMPTY", []))
+
+        for idx in candidate_indices:
+            if idx not in unmatched_user_indices:
                 continue
+            user = user_records[idx]
 
             user_ts = _parse_ts(str(user.get("timestamp", "")))
             user_qty = float(user.get("quantity_disposed", 0.0) or user.get("quantity_acquired", 0.0) or 0.0)
-            user_value = float(user.get("fiat_value", 0.0) or 0.0)
+            user_value = _fiat_home(user)
 
             qty_delta_pct = _abs_pct_delta(carf_qty, user_qty)
             value_delta_pct = _abs_pct_delta(carf_value, user_value) if (carf_value or user_value) else 0.0
@@ -122,7 +150,7 @@ def reconcile_transactions(
                 }
 
         if best_index is None:
-            delta_value = float(carf.get("fiat_value", 0.0) or 0.0)
+            delta_value = carf_value
             matches.append(
                 {
                     "carf_transaction_id": str(carf.get("transaction_id", "")),
@@ -180,6 +208,9 @@ def reconcile_transactions(
             )
             notes = f"{discrepancy_type} delta detected."
 
+        if bool(carf.get("currency_conversion_missing")) or bool(user.get("currency_conversion_missing")):
+            notes += " Missing FX conversion rates; reconciliation used raw fiat values."
+
         confidence = max(0.0, 1.0 - min(1.0, best_score / 100.0))
         method = "exact" if within_tolerance else "fuzzy"
 
@@ -201,7 +232,7 @@ def reconcile_transactions(
 
     for idx in sorted(unmatched_user_indices):
         user = user_records[idx]
-        delta_value = float(user.get("fiat_value", 0.0) or 0.0)
+        delta_value = _fiat_home(user)
         matches.append(
             {
                 "carf_transaction_id": "",
