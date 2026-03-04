@@ -1,0 +1,2 @@
+transaction_id,date,asset_disposed,quantity_disposed,asset_acquired,quantity_acquired,proceeds,currency,fee,broker
+1099da-001,2026-01-10T10:00:10Z,BTC,0.25,USD,9000,9000,USD,12,Kraken US

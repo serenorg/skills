@@ -1,0 +1,5 @@
+transaction_id,timestamp,transaction_type,asset_disposed,quantity_disposed,asset_acquired,quantity_acquired,fiat_value,fiat_currency,fee,fee_currency,jurisdiction
+user-tx-001,2026-01-10T10:00:30Z,exchange,BTC,0.25,USD,9000,9001,USD,12,USD,US
+user-tx-002,2026-01-12T11:00:00Z,relevant_transfer,ETH,1.5,,0,3600,USD,0,USD,US
+user-tx-003,2026-01-13T11:00:00Z,exchange,,0,DOT,25,120,USD,0,USD,US
+user-tx-004,2026-01-15T11:00:00Z,exchange,SOL,10,USD,1800,1800,USD,1,USD,US

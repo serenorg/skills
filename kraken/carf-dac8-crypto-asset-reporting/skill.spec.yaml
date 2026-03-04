@@ -1,0 +1,73 @@
+skill: carf-dac8-crypto-asset-reporting
+description: Reconcile CARF and DAC8 exchange-reported crypto transactions against user records with audit-ready discrepancy reporting.
+triggers:
+  - reconcile carf report
+  - reconcile dac8 crypto records
+  - compare exchange reported crypto transactions with my own records
+  - bridge 1099-da with international carf records
+runtime:
+  language: python
+  entrypoint: scripts/agent.py
+inputs:
+  timestamp_tolerance_hours:
+    type: integer
+    default: 24
+  quantity_tolerance_pct:
+    type: number
+    default: 0.5
+  fiat_tolerance_pct:
+    type: number
+    default: 1.0
+  home_currency:
+    type: string
+    default: USD
+  enable_dac8_extensions:
+    type: boolean
+    default: true
+  enable_transfer_tracking:
+    type: boolean
+    default: true
+  enable_bridge_1099da:
+    type: boolean
+    default: true
+secrets:
+  - SEREN_API_KEY
+  - SEREN_BOOTSTRAP_TOKEN
+  - SERENDB_URL
+state:
+  local:
+    json: state/*.json
+    logs: logs/*.jsonl
+policies:
+  local_processing_only: true
+  cpa_escalation_supported: true
+workflow:
+  steps:
+    - id: parse_reports
+      use: scripts.carf_parser.parse_carf_xml|scripts.dac8_parser.parse_dac8_xml|scripts.csv_normalizer.parse_casp_csv
+    - id: normalize_user_records
+      use: scripts.csv_normalizer.parse_user_csv|scripts.bridge_1099da.parse_1099da_csv
+    - id: detect_jurisdictions
+      use: scripts.jurisdiction_detector.detect_jurisdictions
+    - id: reconcile
+      use: scripts.reconciliation_engine.reconcile_transactions
+    - id: track_transfers
+      use: scripts.transfer_tracker.reconcile_transfers
+    - id: generate_reports
+      use: scripts.report_generator.generate_reconciliation_outputs
+    - id: persist_serendb
+      use: scripts.serendb_store.SerenDBStore
+tests:
+  unit:
+    - tests/test_carf_parser.py
+    - tests/test_reconciliation.py
+    - tests/test_jurisdiction.py
+  smoke:
+    - tests/test_smoke.py
+publish:
+  org: kraken
+  slug: carf-dac8-crypto-asset-reporting
+metadata:
+  category: tax
+  execution_model: local_first_reconciliation
+  standards: [CARF, DAC8, 1099-DA]

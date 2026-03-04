@@ -1,0 +1,21 @@
+{
+  "inputs": {
+    "timestamp_tolerance_hours": 24,
+    "quantity_tolerance_pct": 0.5,
+    "fiat_tolerance_pct": 1.0,
+    "home_currency": "USD",
+    "enable_dac8_extensions": true,
+    "enable_transfer_tracking": true,
+    "enable_bridge_1099da": true
+  },
+  "cpa": {
+    "materiality_threshold_usd": 1000.0
+  },
+  "runtime": {
+    "save_json_export": true
+  },
+  "seren": {
+    "auto_register_key": true,
+    "api_base_url": "https://api.serendb.com"
+  }
+}
