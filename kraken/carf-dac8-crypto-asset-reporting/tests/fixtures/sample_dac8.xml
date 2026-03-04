@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DAC8Report>
+  <MessageSpec>
+    <MessageRefId>DAC8-REPORT-2026-001</MessageRefId>
+    <CaspName>Kraken EU</CaspName>
+    <CaspJurisdiction>FR</CaspJurisdiction>
+    <EUMemberState>FR</EUMemberState>
+  </MessageSpec>
+  <Body>
+    <TransactionReport>
+      <TransactionId>dac8-tx-001</TransactionId>
+      <Timestamp>2026-02-10T10:00:00Z</Timestamp>
+      <TransactionType>exchange</TransactionType>
+      <AssetAcquired>EURC</AssetAcquired>
+      <QuantityAcquired>5000</QuantityAcquired>
+      <FiatValue>5000</FiatValue>
+      <FiatCurrency>EUR</FiatCurrency>
+      <Jurisdiction>FR</Jurisdiction>
+    </TransactionReport>
+    <TransactionReport>
+      <TransactionId>dac8-tx-002</TransactionId>
+      <Timestamp>2026-02-12T10:00:00Z</Timestamp>
+      <TransactionType>exchange</TransactionType>
+      <AssetDisposed>NFT-ART-123</AssetDisposed>
+      <QuantityDisposed>1</QuantityDisposed>
+      <FiatValue>75000</FiatValue>
+      <FiatCurrency>EUR</FiatCurrency>
+      <Jurisdiction>FR</Jurisdiction>
+    </TransactionReport>
+  </Body>
+</DAC8Report>
