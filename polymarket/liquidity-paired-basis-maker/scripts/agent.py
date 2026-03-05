@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 
 SEREN_POLYMARKET_PUBLISHER_HOST = "api.serendb.com"
 SEREN_PUBLISHERS_PREFIX = "/publishers/"
+SEREN_POLYMARKET_PUBLISHER_PREFIX = f"https://{SEREN_POLYMARKET_PUBLISHER_HOST}{SEREN_PUBLISHERS_PREFIX}"
 SEREN_POLYMARKET_DATA_PUBLISHER = "polymarket-data"
 SEREN_POLYMARKET_TRADING_PUBLISHER = "polymarket-trading-serenai"
 SEREN_POLYMARKET_DATA_URL_PREFIX = (
@@ -34,6 +35,8 @@ SEREN_POLYMARKET_TRADING_URL_PREFIX = (
 SEREN_ALLOWED_POLYMARKET_PUBLISHERS = frozenset(
     {SEREN_POLYMARKET_DATA_PUBLISHER, SEREN_POLYMARKET_TRADING_PUBLISHER}
 )
+POLICY_VIOLATION_BACKTEST_SOURCE = "policy_violation: backtest data source must use Seren Polymarket publisher"
+MISSING_SEREN_API_KEY_ERROR = "missing_seren_api_key: set SEREN_API_KEY"
 
 
 DISCLAIMER = (
@@ -263,11 +266,13 @@ def _seren_publisher_target(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.netloc != SEREN_POLYMARKET_PUBLISHER_HOST:
         raise ValueError(
+            f"{POLICY_VIOLATION_BACKTEST_SOURCE}. "
             "Backtest URL must use Seren Polymarket Publisher host "
             f"'https://{SEREN_POLYMARKET_PUBLISHER_HOST}'."
         )
     if not parsed.path.startswith(SEREN_PUBLISHERS_PREFIX):
         raise ValueError(
+            f"{POLICY_VIOLATION_BACKTEST_SOURCE}. "
             "Backtest URL must use a supported Seren Polymarket Publisher URL prefix "
             f"('{SEREN_POLYMARKET_DATA_URL_PREFIX}/...' or '{SEREN_POLYMARKET_TRADING_URL_PREFIX}/...')."
         )
@@ -275,6 +280,7 @@ def _seren_publisher_target(url: str) -> tuple[str, str]:
     publisher_slug, _, remainder = path_without_prefix.partition("/")
     if publisher_slug not in SEREN_ALLOWED_POLYMARKET_PUBLISHERS:
         raise ValueError(
+            f"{POLICY_VIOLATION_BACKTEST_SOURCE}. "
             "Backtest URL must use a supported Polymarket publisher "
             f"({', '.join(sorted(SEREN_ALLOWED_POLYMARKET_PUBLISHERS))})."
         )
@@ -482,7 +488,7 @@ def _http_get_json(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
                     "Failed to fetch Polymarket data from Seren MCP. "
                     "Ensure Seren Desktop is logged in (or set SEREN_MCP_COMMAND), "
                     "or provide SEREN_API_KEY for direct gateway auth "
-                    "(missing_seren_api_key)."
+                    f"({MISSING_SEREN_API_KEY_ERROR})."
                 ) from exc
 
     try:
