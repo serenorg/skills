@@ -588,6 +588,9 @@ def run_backtest(config: dict[str, Any], backtest_days: int | None) -> dict[str,
     total_pnl = equity - p.bankroll_usd
     total_return_pct = (total_pnl / p.bankroll_usd) * 100.0
     max_drawdown_usd, max_drawdown_pct = _max_drawdown_stats(equity_curve)
+    # UI-facing percentages should not report losses below -100% or drawdowns above 100%.
+    display_total_return_pct = max(total_return_pct, -100.0)
+    display_max_drawdown_pct = min(max_drawdown_pct, 100.0)
     events = len(event_pnls)
     hit_rate_pct = ((sum(1 for pnl in event_pnls if pnl > 0.0) / events) * 100.0) if events else 0.0
     annualized_return_pct = _annualized_return_pct(starting=p.bankroll_usd, ending=equity, days=days)
@@ -633,8 +636,8 @@ def run_backtest(config: dict[str, Any], backtest_days: int | None) -> dict[str,
             "starting_bankroll_usd": round(p.bankroll_usd, 2),
             "ending_bankroll_usd": round(equity, 2),
             "total_pnl_usd": round(total_pnl, 4),
-            "return_pct": round(total_return_pct, 4),
-            "total_return_pct": round(total_return_pct, 4),
+            "return_pct": round(display_total_return_pct, 4),
+            "total_return_pct": round(display_total_return_pct, 4),
             "annualized_return_pct": round(annualized_return_pct, 4),
             "sharpe_like_score": round(sharpe_like, 4),
             "hit_rate_pct": round(hit_rate_pct, 4),
@@ -643,7 +646,7 @@ def run_backtest(config: dict[str, Any], backtest_days: int | None) -> dict[str,
             "events": events,
             "min_events_required": bt.min_events,
             "max_drawdown_usd": round(max_drawdown_usd, 4),
-            "max_drawdown_pct": round(max_drawdown_pct, 4),
+            "max_drawdown_pct": round(display_max_drawdown_pct, 4),
             "decision_hint": "consider_trade_mode" if total_pnl > 0 else "paper_only_or_tune",
         },
         "markets": sorted(summaries, key=lambda row: row["pnl_usd"], reverse=True),
