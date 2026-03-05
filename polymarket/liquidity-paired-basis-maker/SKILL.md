@@ -1,3 +1,4 @@
+---
 name: liquidity-paired-basis-maker
 description: "Run a liquidity-filtered paired-market basis strategy on Polymarket with mandatory backtest-first gating before trade intents."
 ---
@@ -18,7 +19,7 @@ description: "Run a liquidity-filtered paired-market basis strategy on Polymarke
 
 ## Workflow Summary
 
-1. `load_backtest_pairs` pulls live market histories from the Seren Polymarket Publisher (Gamma + CLOB proxied), applies a liquidity-filtered universe cap, builds pairs, and timestamp-aligns each pair.
+1. `load_backtest_pairs` pulls live market histories from Seren Polymarket Publisher (Gamma markets + CLOB history), applies a liquidity-filtered universe cap, builds pairs, and timestamp-aligns each pair.
 2. `simulate_basis_reversion` evaluates entry/exit behavior on basis widening and convergence.
 3. `summarize_backtest` reports total return, annualized return, Sharpe-like score, max drawdown, hit rate, trade-rate, and pair-level contributions.
 4. `sample_gate` fails backtest if `events < backtest.min_events` (default `200`).
@@ -39,16 +40,18 @@ Live execution requires both:
 
 - `scripts/agent.py` - basis backtest + paired trade-intent runtime
 - `config.example.json` - strategy parameters, live backtest defaults, and trade-mode sample markets
-- `.env.example` - environment template for API credentials
+- `.env.example` - optional fallback auth/env template (`SEREN_API_KEY` only if MCP is unavailable)
 
 ## Quick Start
 
 ```bash
-cd polymarket/liquidity-paired-basis-maker
+cd artifacts/polymarket/liquidity-paired-basis-maker
 cp .env.example .env
 cp config.example.json config.json
 python3 scripts/agent.py --config config.json
 ```
+
+If you are logged into Seren Desktop, the runtime uses local `seren-mcp` auth automatically.
 
 ## Run Trade Mode (Backtest-First)
 

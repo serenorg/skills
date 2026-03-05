@@ -7,6 +7,9 @@ import argparse
 import json
 import math
 import os
+import select
+import shlex
+import subprocess
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,8 +18,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import pstdev
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
+
+SEREN_POLYMARKET_PUBLISHER_HOST = "api.serendb.com"
+SEREN_PUBLISHERS_PREFIX = "/publishers/"
+SEREN_POLYMARKET_DATA_PUBLISHER = "polymarket-data"
+SEREN_POLYMARKET_TRADING_PUBLISHER = "polymarket-trading-serenai"
+SEREN_POLYMARKET_DATA_URL_PREFIX = (
+    f"https://{SEREN_POLYMARKET_PUBLISHER_HOST}{SEREN_PUBLISHERS_PREFIX}{SEREN_POLYMARKET_DATA_PUBLISHER}"
+)
+SEREN_POLYMARKET_TRADING_URL_PREFIX = (
+    f"https://{SEREN_POLYMARKET_PUBLISHER_HOST}{SEREN_PUBLISHERS_PREFIX}{SEREN_POLYMARKET_TRADING_PUBLISHER}"
+)
+SEREN_ALLOWED_POLYMARKET_PUBLISHERS = frozenset(
+    {SEREN_POLYMARKET_DATA_PUBLISHER, SEREN_POLYMARKET_TRADING_PUBLISHER}
+)
 
 
 DISCLAIMER = (
@@ -24,7 +41,6 @@ DISCLAIMER = (
     "and liquidity can vanish. Backtests are hypothetical and do not guarantee future "
     "performance. Use dry-run first and only trade with risk capital."
 )
-SEREN_POLYMARKET_PUBLISHER_PREFIX = "https://api.serendb.com/publishers/polymarket-data/"
 
 
 @dataclass(frozen=True)
@@ -58,8 +74,8 @@ class BacktestParams:
     max_markets: int = 80
     history_interval: str = "max"
     history_fidelity_minutes: int = 60
-    gamma_markets_url: str = "https://api.serendb.com/publishers/polymarket-data/markets"
-    clob_history_url: str = "https://api.serendb.com/publishers/polymarket-data/prices-history"
+    gamma_markets_url: str = f"{SEREN_POLYMARKET_DATA_URL_PREFIX}/markets"
+    clob_history_url: str = f"{SEREN_POLYMARKET_TRADING_URL_PREFIX}/prices-history"
     history_fetch_workers: int = 4
 
 
@@ -174,8 +190,8 @@ def to_backtest_params(config: dict[str, Any]) -> BacktestParams:
         max_markets=max(0, _safe_int(raw.get("max_markets"), 80)),
         history_interval=_safe_str(raw.get("history_interval"), "max"),
         history_fidelity_minutes=max(1, _safe_int(raw.get("history_fidelity_minutes"), 60)),
-        gamma_markets_url=_safe_str(raw.get("gamma_markets_url"), "https://api.serendb.com/publishers/polymarket-data/markets"),
-        clob_history_url=_safe_str(raw.get("clob_history_url"), "https://api.serendb.com/publishers/polymarket-data/prices-history"),
+        gamma_markets_url=_safe_str(raw.get("gamma_markets_url"), f"{SEREN_POLYMARKET_DATA_URL_PREFIX}/markets"),
+        clob_history_url=_safe_str(raw.get("clob_history_url"), f"{SEREN_POLYMARKET_TRADING_URL_PREFIX}/prices-history"),
         history_fetch_workers=max(1, _safe_int(raw.get("history_fetch_workers"), 4)),
     )
 
@@ -237,15 +253,206 @@ def _parse_iso_ts(value: Any) -> int | None:
         return None
 
 
-def _http_get_json(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
-    if not url.startswith(SEREN_POLYMARKET_PUBLISHER_PREFIX):
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _seren_publisher_target(url: str) -> tuple[str, str]:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc != SEREN_POLYMARKET_PUBLISHER_HOST:
         raise ValueError(
-            "policy_violation: backtest data source must use Seren Polymarket publisher "
-            f"({SEREN_POLYMARKET_PUBLISHER_PREFIX}); got {url}"
+            "Backtest URL must use Seren Polymarket Publisher host "
+            f"'https://{SEREN_POLYMARKET_PUBLISHER_HOST}'."
         )
-    api_key = os.getenv("SEREN_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError("missing_seren_api_key: set SEREN_API_KEY to query Seren publishers.")
+    if not parsed.path.startswith(SEREN_PUBLISHERS_PREFIX):
+        raise ValueError(
+            "Backtest URL must use a supported Seren Polymarket Publisher URL prefix "
+            f"('{SEREN_POLYMARKET_DATA_URL_PREFIX}/...' or '{SEREN_POLYMARKET_TRADING_URL_PREFIX}/...')."
+        )
+    path_without_prefix = parsed.path[len(SEREN_PUBLISHERS_PREFIX) :]
+    publisher_slug, _, remainder = path_without_prefix.partition("/")
+    if publisher_slug not in SEREN_ALLOWED_POLYMARKET_PUBLISHERS:
+        raise ValueError(
+            "Backtest URL must use a supported Polymarket publisher "
+            f"({', '.join(sorted(SEREN_ALLOWED_POLYMARKET_PUBLISHERS))})."
+        )
+    publisher_path = f"/{remainder}" if remainder else "/"
+    if parsed.query:
+        publisher_path = f"{publisher_path}?{parsed.query}"
+    return publisher_slug, publisher_path
+
+
+def _read_mcp_exact(fd: int, size: int, timeout_seconds: float) -> bytes:
+    buf = bytearray()
+    while len(buf) < size:
+        ready, _, _ = select.select([fd], [], [], timeout_seconds)
+        if not ready:
+            raise TimeoutError("Timed out waiting for response from seren-mcp.")
+        chunk = os.read(fd, size - len(buf))
+        if not chunk:
+            raise RuntimeError("seren-mcp closed stdout before completing a response.")
+        buf.extend(chunk)
+    return bytes(buf)
+
+
+def _read_mcp_message(proc: subprocess.Popen[bytes], timeout_seconds: float) -> dict[str, Any]:
+    if proc.stdout is None:
+        raise RuntimeError("seren-mcp stdout is not available.")
+    fd = proc.stdout.fileno()
+    header_buf = bytearray()
+    while b"\r\n\r\n" not in header_buf:
+        header_buf.extend(_read_mcp_exact(fd, 1, timeout_seconds))
+        if len(header_buf) > 16384:
+            raise RuntimeError("Invalid MCP header: too large.")
+    header_raw, _ = header_buf.split(b"\r\n\r\n", 1)
+    headers: dict[str, str] = {}
+    for line in header_raw.decode("ascii", errors="ignore").split("\r\n"):
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        headers[k.strip().lower()] = v.strip()
+    content_length = _safe_int(headers.get("content-length"), -1)
+    if content_length < 0:
+        raise RuntimeError("Invalid MCP header: missing content-length.")
+    body = _read_mcp_exact(fd, content_length, timeout_seconds)
+    parsed = json.loads(body.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Invalid MCP response payload.")
+    return parsed
+
+
+def _write_mcp_message(proc: subprocess.Popen[bytes], payload: dict[str, Any]) -> None:
+    if proc.stdin is None:
+        raise RuntimeError("seren-mcp stdin is not available.")
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+    proc.stdin.write(header)
+    proc.stdin.write(body)
+    proc.stdin.flush()
+
+
+def _mcp_request(
+    proc: subprocess.Popen[bytes],
+    request_id: int,
+    method: str,
+    params: dict[str, Any] | None,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    request: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
+    if params is not None:
+        request["params"] = params
+    _write_mcp_message(proc, request)
+    while True:
+        message = _read_mcp_message(proc, timeout_seconds)
+        if message.get("id") != request_id:
+            continue
+        error = message.get("error")
+        if isinstance(error, dict):
+            raise RuntimeError(_safe_str(error.get("message"), "MCP request failed."))
+        result = message.get("result")
+        if isinstance(result, dict):
+            return result
+        return {"value": result}
+
+
+def _extract_call_publisher_body(result: dict[str, Any]) -> dict[str, Any] | list[Any]:
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict):
+        body = structured.get("body")
+        if isinstance(body, dict | list):
+            return body
+        if isinstance(structured, dict | list):
+            return structured
+
+    content = result.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if _safe_str(item.get("type"), "") != "text":
+                continue
+            text = _safe_str(item.get("text"), "")
+            if not text:
+                continue
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                body = parsed.get("body")
+                if isinstance(body, dict | list):
+                    return body
+                return parsed
+            if isinstance(parsed, list):
+                return parsed
+    if isinstance(result.get("body"), dict | list):
+        return result["body"]
+    raise RuntimeError("Unable to parse call_publisher MCP response payload.")
+
+
+def _http_get_json_via_mcp(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
+    publisher_slug, publisher_path = _seren_publisher_target(url)
+    command_raw = _safe_str(os.getenv("SEREN_MCP_COMMAND"), "seren-mcp").strip() or "seren-mcp"
+    command = shlex.split(command_raw)
+    if not command:
+        raise RuntimeError("SEREN_MCP_COMMAND is empty.")
+
+    timeout_seconds = max(1.0, float(timeout))
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        _mcp_request(
+            proc=proc,
+            request_id=1,
+            method="initialize",
+            params={
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "liquidity-paired-basis-maker", "version": "1.1"},
+            },
+            timeout_seconds=timeout_seconds,
+        )
+        _write_mcp_message(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            },
+        )
+        result = _mcp_request(
+            proc=proc,
+            request_id=2,
+            method="tools/call",
+            params={
+                "name": "call_publisher",
+                "arguments": {
+                    "publisher": publisher_slug,
+                    "method": "GET",
+                    "path": publisher_path,
+                    "response_format": "json",
+                },
+            },
+            timeout_seconds=timeout_seconds,
+        )
+        return _extract_call_publisher_body(result)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=1)
+
+
+def _http_get_json_via_api_key(url: str, api_key: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
     req = Request(
         url,
         headers={
@@ -256,6 +463,36 @@ def _http_get_json(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
     )
     with urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _http_get_json(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
+    _seren_publisher_target(url)
+
+    api_key = _safe_str(os.getenv("SEREN_API_KEY"), "").strip()
+    prefer_mcp = _is_truthy(os.getenv("SEREN_USE_MCP")) or not api_key
+    mcp_error: Exception | None = None
+
+    if prefer_mcp:
+        try:
+            return _http_get_json_via_mcp(url, timeout=timeout)
+        except Exception as exc:
+            mcp_error = exc
+            if not api_key:
+                raise RuntimeError(
+                    "Failed to fetch Polymarket data from Seren MCP. "
+                    "Ensure Seren Desktop is logged in (or set SEREN_MCP_COMMAND), "
+                    "or provide SEREN_API_KEY for direct gateway auth "
+                    "(missing_seren_api_key)."
+                ) from exc
+
+    try:
+        return _http_get_json_via_api_key(url, api_key=api_key, timeout=timeout)
+    except Exception as exc:
+        if mcp_error is not None:
+            raise RuntimeError(
+                f"Failed via MCP ({mcp_error}) and API key fallback ({exc})."
+            ) from exc
+        raise
 
 
 def _align_histories(primary: list[tuple[int, float]], secondary: list[tuple[int, float]]) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
@@ -405,7 +642,7 @@ def _fetch_live_backtest_pairs(p: StrategyParams, bt: BacktestParams, start_ts: 
                     "rebate_bps": (_safe_float(primary.get("rebate_bps"), p.maker_rebate_bps) + _safe_float(secondary.get("rebate_bps"), p.maker_rebate_bps)) / 2.0,
                     "history": h1,
                     "pair_history": h2,
-                    "source": "live-api",
+                    "source": "live-seren-publisher",
                 }
             )
 
@@ -433,7 +670,7 @@ def _fetch_live_backtest_pairs(p: StrategyParams, bt: BacktestParams, start_ts: 
                 "rebate_bps": (_safe_float(primary.get("rebate_bps"), p.maker_rebate_bps) + _safe_float(secondary.get("rebate_bps"), p.maker_rebate_bps)) / 2.0,
                 "history": h1,
                 "pair_history": h2,
-                "source": "live-api-fallback",
+                "source": "live-seren-publisher-fallback",
             }
         )
 
@@ -446,7 +683,7 @@ def _load_backtest_markets(
     start_ts: int,
     end_ts: int,
 ) -> tuple[list[dict[str, Any]], str]:
-    return _fetch_live_backtest_pairs(p=p, bt=bt, start_ts=start_ts, end_ts=end_ts), "live-api"
+    return _fetch_live_backtest_pairs(p=p, bt=bt, start_ts=start_ts, end_ts=end_ts), "live-seren-publisher"
 
 
 def _max_drawdown_stats(equity_curve: list[float]) -> tuple[float, float]:
