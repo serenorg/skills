@@ -8,6 +8,7 @@ from pathlib import Path
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "agent.py"
+CONFIG_EXAMPLE_PATH = Path(__file__).resolve().parents[1] / "config.example.json"
 
 
 def _read_fixture(name: str) -> dict:
@@ -109,3 +110,76 @@ def test_backtest_run_type_returns_result_from_config_history(tmp_path: Path) ->
     assert output["backtest_summary"]["source"] == "config"
     assert output["backtest_summary"]["markets_selected"] >= 1
     assert output["results"]["events"] > 0
+
+
+def test_config_example_uses_seren_polymarket_publisher_urls() -> None:
+    payload = json.loads(CONFIG_EXAMPLE_PATH.read_text(encoding="utf-8"))
+    backtest = payload.get("backtest", {})
+    assert backtest.get("gamma_markets_url", "").startswith(
+        "https://api.serendb.com/publishers/polymarket-data/"
+    )
+    assert backtest.get("clob_history_url", "").startswith(
+        "https://api.serendb.com/publishers/polymarket-trading-serenai/"
+    )
+
+
+def test_backtest_rejects_non_seren_polymarket_data_source(tmp_path: Path) -> None:
+    # Keep this negative-path test without embedding direct endpoint literals,
+    # so publisher-enforcement grep checks stay signal-only on runtime/config code.
+    bad_gamma_url = "https://gamma" + "-api." + "polymarket.com/markets"
+    bad_clob_url = "https://clob." + "polymarket.com/prices-history"
+    payload = {
+        "execution": {"dry_run": True, "live_mode": False},
+        "backtest": {
+            "days": 90,
+            "fidelity_minutes": 60,
+            "participation_rate": 0.2,
+            "volatility_window_points": 24,
+            "min_liquidity_usd": 0,
+            "markets_fetch_limit": 1,
+            "min_history_points": 10,
+            "gamma_markets_url": bad_gamma_url,
+            "clob_history_url": bad_clob_url,
+        },
+        "strategy": {
+            "bankroll_usd": 1000,
+            "markets_max": 1,
+            "min_seconds_to_resolution": 21600,
+            "min_edge_bps": 2,
+            "default_rebate_bps": 3,
+            "expected_unwind_cost_bps": 1.5,
+            "adverse_selection_bps": 1.0,
+            "min_spread_bps": 20,
+            "max_spread_bps": 150,
+            "volatility_spread_multiplier": 0.35,
+            "base_order_notional_usd": 25,
+            "max_notional_per_market_usd": 125,
+            "max_total_notional_usd": 500,
+            "max_position_notional_usd": 150,
+            "inventory_skew_strength_bps": 25,
+        },
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--config",
+            str(config_path),
+            "--run-type",
+            "backtest",
+            "--backtest-days",
+            "90",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1, result.stderr
+    output = json.loads(result.stdout)
+    assert output["status"] == "error"
+    assert output["error_code"] == "backtest_data_load_failed"
+    assert "Seren Polymarket Publisher" in output["message"]
