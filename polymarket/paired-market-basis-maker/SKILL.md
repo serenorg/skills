@@ -19,11 +19,13 @@ description: "Run a paired-market basis strategy on Polymarket with mandatory ba
 
 ## Workflow Summary
 
-1. `load_backtest_pairs` ingests paired histories (`history` + `pair_history`).
+1. `load_backtest_pairs` pulls live market histories from Polymarket (Gamma + CLOB), builds pairs from the active market universe, and timestamp-aligns each pair.
+2. Optional override: use `--backtest-file` for local paired fixture replay.
 2. `simulate_basis_reversion` evaluates entry/exit behavior on basis widening and convergence.
-3. `summarize_backtest` reports return %, PnL, drawdown, trade-rate, and pair-level contributions.
-4. `backtest_gate` blocks trade mode by default if backtest return is non-positive.
-5. `emit_pair_trades` outputs two-leg trade intents (`primary` + `pair`) with risk caps.
+3. `summarize_backtest` reports total return, annualized return, Sharpe-like score, max drawdown, hit rate, trade-rate, and pair-level contributions.
+4. `sample_gate` fails backtest if `events < backtest.min_events` (default `200`).
+5. `backtest_gate` blocks trade mode by default if backtest return is non-positive.
+6. `emit_pair_trades` outputs two-leg trade intents (`primary` + `pair`) with risk caps.
 
 ## Execution Modes
 
@@ -38,7 +40,7 @@ Live execution requires both:
 ## Runtime Files
 
 - `scripts/agent.py` - basis backtest + paired trade-intent runtime
-- `config.example.json` - strategy parameters and paired sample markets
+- `config.example.json` - strategy parameters, live backtest defaults, and trade-mode sample markets
 - `.env.example` - environment template for API credentials
 
 ## Quick Start

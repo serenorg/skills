@@ -5,12 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import pstdev
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 DISCLAIMER = (
@@ -22,7 +26,7 @@ DISCLAIMER = (
 
 @dataclass(frozen=True)
 class StrategyParams:
-    bankroll_usd: float = 1000.0
+    bankroll_usd: float = 500.0
     markets_max: int = 8
     min_seconds_to_resolution: int = 45 * 60
     min_edge_bps: float = 2.0
@@ -34,10 +38,10 @@ class StrategyParams:
     volatility_spread_multiplier: float = 0.35
     decay_alpha_bps: float = 8.0
     decay_horizon_seconds: int = 7 * 24 * 60 * 60
-    base_order_notional_usd: float = 22.0
-    max_notional_per_market_usd: float = 120.0
-    max_total_notional_usd: float = 480.0
-    max_position_notional_usd: float = 180.0
+    base_order_notional_usd: float = 54.0
+    max_notional_per_market_usd: float = 250.0
+    max_total_notional_usd: float = 500.0
+    max_position_notional_usd: float = 220.0
     inventory_skew_strength_bps: float = 20.0
 
 
@@ -46,9 +50,19 @@ class BacktestParams:
     days: int = 180
     days_min: int = 60
     days_max: int = 365
-    participation_rate: float = 0.24
+    participation_rate: float = 0.62
     volatility_window_points: int = 16
-    min_history_points: int = 100
+    min_history_points: int = 72
+    min_events: int = 200
+    min_liquidity_usd: float = 5000.0
+    markets_fetch_page_size: int = 500
+    max_markets: int = 0
+    history_interval: str = "max"
+    history_fidelity_minutes: int = 60
+    gamma_markets_url: str = "https://gamma-api.polymarket.com/markets"
+    clob_history_url: str = "https://clob.polymarket.com/prices-history"
+    allow_config_backtest_markets: bool = False
+    history_fetch_workers: int = 12
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,6 +123,20 @@ def _safe_str(value: Any, default: str = "") -> str:
     return str(value)
 
 
+def _safe_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
 def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
@@ -127,7 +155,7 @@ def load_config(config_path: str) -> dict[str, Any]:
 def to_strategy_params(config: dict[str, Any]) -> StrategyParams:
     raw = config.get("strategy", {})
     return StrategyParams(
-        bankroll_usd=max(1.0, _safe_float(raw.get("bankroll_usd"), 1000.0)),
+        bankroll_usd=max(1.0, _safe_float(raw.get("bankroll_usd"), 500.0)),
         markets_max=max(1, _safe_int(raw.get("markets_max"), 8)),
         min_seconds_to_resolution=max(
             60,
@@ -148,18 +176,18 @@ def to_strategy_params(config: dict[str, Any]) -> StrategyParams:
             3600,
             _safe_int(raw.get("decay_horizon_seconds"), 7 * 24 * 60 * 60),
         ),
-        base_order_notional_usd=max(1.0, _safe_float(raw.get("base_order_notional_usd"), 22.0)),
+        base_order_notional_usd=max(1.0, _safe_float(raw.get("base_order_notional_usd"), 54.0)),
         max_notional_per_market_usd=max(
             1.0,
-            _safe_float(raw.get("max_notional_per_market_usd"), 120.0),
+            _safe_float(raw.get("max_notional_per_market_usd"), 250.0),
         ),
         max_total_notional_usd=max(
             1.0,
-            _safe_float(raw.get("max_total_notional_usd"), 480.0),
+            _safe_float(raw.get("max_total_notional_usd"), 500.0),
         ),
         max_position_notional_usd=max(
             1.0,
-            _safe_float(raw.get("max_position_notional_usd"), 180.0),
+            _safe_float(raw.get("max_position_notional_usd"), 220.0),
         ),
         inventory_skew_strength_bps=max(
             0.0,
@@ -178,9 +206,19 @@ def to_backtest_params(config: dict[str, Any]) -> BacktestParams:
         days=int(days),
         days_min=days_min,
         days_max=days_max,
-        participation_rate=clamp(_safe_float(raw.get("participation_rate"), 0.24), 0.0, 1.0),
+        participation_rate=clamp(_safe_float(raw.get("participation_rate"), 0.62), 0.0, 1.0),
         volatility_window_points=max(4, _safe_int(raw.get("volatility_window_points"), 16)),
-        min_history_points=max(8, _safe_int(raw.get("min_history_points"), 48)),
+        min_history_points=max(8, _safe_int(raw.get("min_history_points"), 72)),
+        min_events=max(1, _safe_int(raw.get("min_events"), 200)),
+        min_liquidity_usd=max(0.0, _safe_float(raw.get("min_liquidity_usd"), 5000.0)),
+        markets_fetch_page_size=max(25, _safe_int(raw.get("markets_fetch_page_size"), 500)),
+        max_markets=max(0, _safe_int(raw.get("max_markets"), 0)),
+        history_interval=_safe_str(raw.get("history_interval"), "max"),
+        history_fidelity_minutes=max(1, _safe_int(raw.get("history_fidelity_minutes"), 60)),
+        gamma_markets_url=_safe_str(raw.get("gamma_markets_url"), "https://gamma-api.polymarket.com/markets"),
+        clob_history_url=_safe_str(raw.get("clob_history_url"), "https://clob.polymarket.com/prices-history"),
+        allow_config_backtest_markets=_safe_bool(raw.get("allow_config_backtest_markets"), False),
+        history_fetch_workers=max(1, _safe_int(raw.get("history_fetch_workers"), 12)),
     )
 
 
@@ -219,12 +257,42 @@ def _normalize_history(raw_history: Any, start_ts: int, end_ts: int) -> list[tup
     return fallback_points
 
 
-def _load_backtest_markets(config: dict[str, Any], backtest_file: str | None, start_ts: int, end_ts: int) -> list[dict[str, Any]]:
-    if backtest_file:
-        payload = load_json(Path(backtest_file))
-    else:
-        payload = config.get("backtest_markets", [])
+def _json_to_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            return []
+    return []
 
+
+def _parse_iso_ts(value: Any) -> int | None:
+    raw = _safe_str(value, "")
+    if not raw:
+        return None
+    try:
+        return int(datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp())
+    except ValueError:
+        return None
+
+
+def _http_get_json(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "resolution-decay-maker/1.1",
+            "Accept": "application/json",
+        },
+    )
+    with urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _load_backtest_markets_from_fixture(payload: dict[str, Any] | list[Any], start_ts: int, end_ts: int) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         raw_markets = payload.get("markets", [])
     elif isinstance(payload, list):
@@ -247,19 +315,174 @@ def _load_backtest_markets(config: dict[str, Any], backtest_file: str | None, st
                 "end_ts": _safe_int(row.get("end_ts"), end_ts + 86400),
                 "rebate_bps": _safe_float(row.get("rebate_bps"), 0.0),
                 "history": history,
+                "source": "fixture",
             }
         )
     return out
 
 
-def _max_drawdown(equity_curve: list[float]) -> float:
+def _fetch_live_backtest_markets(p: StrategyParams, bt: BacktestParams, start_ts: int, end_ts: int) -> list[dict[str, Any]]:
+    offset = 0
+    all_candidates: list[dict[str, Any]] = []
+    seen_token_ids: set[str] = set()
+
+    pages = 0
+    while True:
+        pages += 1
+        if pages > 200:
+            break
+        query = urlencode(
+            {
+                "active": "true",
+                "closed": "false",
+                "limit": bt.markets_fetch_page_size,
+                "offset": offset,
+                "order": "volume24hr",
+                "ascending": "false",
+            }
+        )
+        raw = _http_get_json(f"{bt.gamma_markets_url}?{query}")
+        if not isinstance(raw, list) or not raw:
+            break
+
+        added_on_page = 0
+        for market in raw:
+            if not isinstance(market, dict):
+                continue
+
+            liquidity = _safe_float(market.get("liquidity"), 0.0)
+            if liquidity < bt.min_liquidity_usd:
+                continue
+
+            end_market = _parse_iso_ts(market.get("endDate")) or _safe_int(market.get("end_ts"), end_ts + 86400)
+            if end_market <= start_ts + p.min_seconds_to_resolution:
+                continue
+
+            token_ids = _json_to_list(market.get("clobTokenIds"))
+            if not token_ids:
+                continue
+            token_id = _safe_str(token_ids[0], "")
+            if not token_id or token_id in seen_token_ids:
+                continue
+            seen_token_ids.add(token_id)
+
+            market_id = _safe_str(market.get("id"), token_id)
+            all_candidates.append(
+                {
+                    "market_id": market_id,
+                    "question": _safe_str(market.get("question"), market_id),
+                    "token_id": token_id,
+                    "end_ts": end_market,
+                    "rebate_bps": _safe_float(market.get("rebate_bps"), p.maker_rebate_bps),
+                    "volume24hr": _safe_float(market.get("volume24hr"), 0.0),
+                }
+            )
+            added_on_page += 1
+
+        if added_on_page == 0:
+            break
+        offset += len(raw)
+        if len(raw) < bt.markets_fetch_page_size:
+            break
+
+    candidates = all_candidates[: bt.max_markets] if bt.max_markets > 0 else all_candidates
+
+    def _fetch_candidate_history(candidate: dict[str, Any]) -> dict[str, Any] | None:
+        history_query = urlencode(
+            {
+                "market": candidate["token_id"],
+                "interval": bt.history_interval,
+                "fidelity": bt.history_fidelity_minutes,
+            }
+        )
+        try:
+            payload = _http_get_json(f"{bt.clob_history_url}?{history_query}")
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        history = _normalize_history(
+            _json_to_list(payload.get("history")),
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        if len(history) < bt.min_history_points:
+            return None
+        return {
+            "market_id": candidate["market_id"],
+            "question": candidate["question"],
+            "end_ts": candidate["end_ts"],
+            "rebate_bps": candidate["rebate_bps"],
+            "history": history,
+            "volume24hr": candidate["volume24hr"],
+            "source": "live-api",
+        }
+
+    selected: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max(1, bt.history_fetch_workers)) as executor:
+        futures = [executor.submit(_fetch_candidate_history, candidate) for candidate in candidates]
+        for future in as_completed(futures):
+            row = future.result()
+            if row:
+                selected.append(row)
+
+    selected.sort(key=lambda row: _safe_float(row.get("volume24hr"), 0.0), reverse=True)
+    for row in selected:
+        row.pop("volume24hr", None)
+
+    return selected
+
+
+def _load_backtest_markets(
+    config: dict[str, Any],
+    backtest_file: str | None,
+    p: StrategyParams,
+    bt: BacktestParams,
+    start_ts: int,
+    end_ts: int,
+) -> tuple[list[dict[str, Any]], str]:
+    if backtest_file:
+        payload = load_json(Path(backtest_file))
+        return _load_backtest_markets_from_fixture(payload=payload, start_ts=start_ts, end_ts=end_ts), "file"
+
+    if bt.allow_config_backtest_markets:
+        payload = config.get("backtest_markets", [])
+        return _load_backtest_markets_from_fixture(payload=payload, start_ts=start_ts, end_ts=end_ts), "config"
+
+    markets = _fetch_live_backtest_markets(p=p, bt=bt, start_ts=start_ts, end_ts=end_ts)
+    return markets, "live-api"
+
+
+def _max_drawdown_stats(equity_curve: list[float]) -> tuple[float, float]:
     peak = float("-inf")
-    max_dd = 0.0
+    max_dd_usd = 0.0
+    max_dd_pct = 0.0
     for value in equity_curve:
         if value > peak:
             peak = value
-        max_dd = max(max_dd, peak - value)
-    return max_dd
+        drawdown = peak - value
+        drawdown_pct = (drawdown / peak) * 100.0 if peak > 0 else 0.0
+        max_dd_usd = max(max_dd_usd, drawdown)
+        max_dd_pct = max(max_dd_pct, drawdown_pct)
+    return max_dd_usd, max_dd_pct
+
+
+def _annualized_return_pct(starting: float, ending: float, days: int) -> float:
+    if starting <= 0 or ending <= 0 or days <= 0:
+        return 0.0
+    return ((ending / starting) ** (365.0 / float(days)) - 1.0) * 100.0
+
+
+def _sharpe_like_score(event_pnls: list[float], bankroll_usd: float, days: int) -> float:
+    if bankroll_usd <= 0 or days <= 0 or len(event_pnls) < 2:
+        return 0.0
+    per_event_returns = [pnl / bankroll_usd for pnl in event_pnls]
+    mean = sum(per_event_returns) / len(per_event_returns)
+    stdev = pstdev(per_event_returns)
+    if stdev <= 1e-12:
+        return 0.0
+    events_per_year = max(1.0, len(per_event_returns) * (365.0 / float(days)))
+    return (mean / stdev) * math.sqrt(events_per_year)
 
 
 def _spread_bps(volatility_bps: float, ttl_ratio: float, p: StrategyParams) -> float:
@@ -354,7 +577,24 @@ def run_backtest(config: dict[str, Any], backtest_file: str | None, backtest_day
     end_ts = int(time.time())
     start_ts = end_ts - (days * 24 * 60 * 60)
 
-    markets = _load_backtest_markets(config, backtest_file, start_ts, end_ts)
+    try:
+        markets, source = _load_backtest_markets(
+            config=config,
+            backtest_file=backtest_file,
+            p=p,
+            bt=bt,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error_code": "backtest_data_load_failed",
+            "message": str(exc),
+            "disclaimer": DISCLAIMER,
+            "dry_run": True,
+        }
+
     if not markets:
         return {
             "status": "error",
@@ -370,7 +610,7 @@ def run_backtest(config: dict[str, Any], backtest_file: str | None, backtest_day
     quoted = 0
     total_notional = 0.0
 
-    for market in markets[: p.markets_max]:
+    for market in markets:
         result = _simulate_market(market, p, bt)
         summaries.append(
             {
@@ -394,7 +634,32 @@ def run_backtest(config: dict[str, Any], backtest_file: str | None, backtest_day
         equity_curve.append(equity)
 
     total_pnl = equity - p.bankroll_usd
-    return_pct = (total_pnl / p.bankroll_usd) * 100.0
+    total_return_pct = (total_pnl / p.bankroll_usd) * 100.0
+    max_drawdown_usd, max_drawdown_pct = _max_drawdown_stats(equity_curve)
+    events = len(event_pnls)
+    hit_rate_pct = ((sum(1 for pnl in event_pnls if pnl > 0.0) / events) * 100.0) if events else 0.0
+    annualized_return_pct = _annualized_return_pct(starting=p.bankroll_usd, ending=equity, days=days)
+    sharpe_like = _sharpe_like_score(event_pnls=event_pnls, bankroll_usd=p.bankroll_usd, days=days)
+    turnover_multiple = (total_notional / p.bankroll_usd) if p.bankroll_usd > 0 else 0.0
+
+    if events < bt.min_events:
+        return {
+            "status": "error",
+            "error_code": "insufficient_sample_size",
+            "message": (
+                "Backtest blocked because event sample is too small for decision-grade metrics. "
+                f"Required at least {bt.min_events}, observed {events}."
+            ),
+            "dry_run": True,
+            "backtest_summary": {
+                "days": days,
+                "source": source,
+                "markets_loaded": len(markets),
+                "events_observed": events,
+                "min_events_required": bt.min_events,
+            },
+            "disclaimer": DISCLAIMER,
+        }
 
     return {
         "status": "ok",
@@ -406,6 +671,7 @@ def run_backtest(config: dict[str, Any], backtest_file: str | None, backtest_day
             "days_range": {"min": bt.days_min, "max": bt.days_max},
             "start_utc": datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat(),
             "end_utc": datetime.fromtimestamp(end_ts, tz=timezone.utc).isoformat(),
+            "source": source,
             "markets_selected": len(summaries),
             "considered_points": considered,
             "quoted_points": quoted,
@@ -415,10 +681,17 @@ def run_backtest(config: dict[str, Any], backtest_file: str | None, backtest_day
             "starting_bankroll_usd": round(p.bankroll_usd, 2),
             "ending_bankroll_usd": round(equity, 2),
             "total_pnl_usd": round(total_pnl, 4),
-            "return_pct": round(return_pct, 4),
+            "return_pct": round(total_return_pct, 4),
+            "total_return_pct": round(total_return_pct, 4),
+            "annualized_return_pct": round(annualized_return_pct, 4),
+            "sharpe_like_score": round(sharpe_like, 4),
+            "hit_rate_pct": round(hit_rate_pct, 4),
             "filled_notional_usd": round(total_notional, 2),
-            "events": len(event_pnls),
-            "max_drawdown_usd": round(_max_drawdown(equity_curve), 4),
+            "turnover_multiple": round(turnover_multiple, 4),
+            "events": events,
+            "min_events_required": bt.min_events,
+            "max_drawdown_usd": round(max_drawdown_usd, 4),
+            "max_drawdown_pct": round(max_drawdown_pct, 4),
             "decision_hint": "consider_trade_mode" if total_pnl > 0 else "paper_only_or_tune",
         },
         "markets": sorted(summaries, key=lambda row: row["pnl_usd"], reverse=True),

@@ -19,11 +19,13 @@ description: "Run a Polymarket maker strategy that backtests first and suppresse
 
 ## Workflow Summary
 
-1. `load_backtest_markets` ingests historical price paths from config or `--backtest-file`.
+1. `load_backtest_markets` ingests live historical price paths from Polymarket (Gamma + CLOB) across the active market universe by default.
+2. Optional override: use `--backtest-file` for local fixture replay.
 2. `simulate_with_shock_guard` applies volatility-based quote logic with shock/cooldown suppression.
-3. `summarize_backtest` reports return %, PnL, drawdown, quote-rate, and shock-skip counts.
-4. `backtest_gate` blocks trade mode by default when backtest return is non-positive.
-5. `quote_trade_intents` emits quote intents only for markets passing the shock guard.
+3. `summarize_backtest` reports total return, annualized return, Sharpe-like score, max drawdown, hit rate, quote-rate, and shock-skip counts.
+4. `sample_gate` fails backtest if `events < backtest.min_events` (default `200`).
+5. `backtest_gate` blocks trade mode by default when backtest return is non-positive.
+6. `quote_trade_intents` emits quote intents only for markets passing the shock guard.
 
 ## Execution Modes
 
@@ -38,7 +40,7 @@ Live execution requires both:
 ## Runtime Files
 
 - `scripts/agent.py` - shock-aware backtest and trade-intent runtime
-- `config.example.json` - baseline parameters and sample markets
+- `config.example.json` - baseline parameters, live backtest defaults, and trade-mode sample markets
 - `.env.example` - environment template for API credentials
 
 ## Quick Start

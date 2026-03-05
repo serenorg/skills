@@ -19,11 +19,13 @@ description: "Run a resolution-decay Polymarket maker strategy with mandatory ba
 
 ## Workflow Summary
 
-1. `load_backtest_markets` loads historical market paths from config or `--backtest-file`.
+1. `load_backtest_markets` pulls live historical paths from Polymarket (Gamma + CLOB) across the active market universe by default.
+2. Optional override: use `--backtest-file` for local fixture replay.
 2. `simulate_resolution_decay` replays fills with decay-aware edge assumptions.
-3. `summarize_backtest` outputs return %, PnL, drawdown, quote-rate, and market-level contributions.
-4. `backtest_gate` blocks trade mode when `execution.require_positive_backtest=true` and backtest return is non-positive.
-5. `quote_trade_intents` emits dry-run quote intents (or guarded live mode with explicit confirmation).
+3. `summarize_backtest` outputs total return, annualized return, Sharpe-like score, max drawdown, hit rate, turnover, and market-level contributions.
+4. `sample_gate` fails backtest if `events < backtest.min_events` (default `200`).
+5. `backtest_gate` blocks trade mode when `execution.require_positive_backtest=true` and backtest return is non-positive.
+6. `quote_trade_intents` emits dry-run quote intents (or guarded live mode with explicit confirmation).
 
 ## Execution Modes
 
@@ -38,7 +40,7 @@ Live execution requires both:
 ## Runtime Files
 
 - `scripts/agent.py` - backtest engine + trade intent generator
-- `config.example.json` - baseline parameters, sample markets, and backtest range
+- `config.example.json` - baseline parameters, live backtest defaults, and trade-mode sample markets
 - `.env.example` - environment template for future credential wiring
 
 ## Quick Start

@@ -11,12 +11,22 @@
       "min": 60,
       "max": 365
     },
-    "participation_rate": 0.24,
-    "volatility_window_points": 6,
-    "min_history_points": 10
+    "participation_rate": 0.62,
+    "volatility_window_points": 16,
+    "min_history_points": 72,
+    "min_events": 200,
+    "min_liquidity_usd": 5000,
+    "markets_fetch_page_size": 500,
+    "max_markets": 0,
+    "history_interval": "max",
+    "history_fidelity_minutes": 60,
+    "history_fetch_workers": 12,
+    "gamma_markets_url": "https://gamma-api.polymarket.com/markets",
+    "clob_history_url": "https://clob.polymarket.com/prices-history",
+    "allow_config_backtest_markets": false
   },
   "strategy": {
-    "bankroll_usd": 1200,
+    "bankroll_usd": 500,
     "markets_max": 6,
     "min_seconds_to_resolution": 2700,
     "min_edge_bps": 2.0,
@@ -28,10 +38,10 @@
     "volatility_spread_multiplier": 0.35,
     "decay_alpha_bps": 8.0,
     "decay_horizon_seconds": 604800,
-    "base_order_notional_usd": 22,
-    "max_notional_per_market_usd": 120,
-    "max_total_notional_usd": 480,
-    "max_position_notional_usd": 180,
+    "base_order_notional_usd": 54,
+    "max_notional_per_market_usd": 250,
+    "max_total_notional_usd": 500,
+    "max_position_notional_usd": 220,
     "inventory_skew_strength_bps": 20
   },
   "state": {
@@ -67,48 +77,6 @@
       "seconds_to_resolution": 21600,
       "volatility_bps": 55,
       "rebate_bps": 2.3
-    }
-  ],
-  "backtest_markets": [
-    {
-      "market_id": "US-ELECTION-2026-SENATE-AZ",
-      "question": "Will Party X win Arizona Senate seat in 2026?",
-      "end_ts": 1774000000,
-      "rebate_bps": 2.4,
-      "history": [
-        { "t": 1762000000, "p": 0.4900 },
-        { "t": 1762018000, "p": 0.4908 },
-        { "t": 1762036000, "p": 0.4915 },
-        { "t": 1762054000, "p": 0.4910 },
-        { "t": 1762072000, "p": 0.4921 },
-        { "t": 1762090000, "p": 0.4927 },
-        { "t": 1762108000, "p": 0.4934 },
-        { "t": 1762126000, "p": 0.4942 },
-        { "t": 1762144000, "p": 0.4937 },
-        { "t": 1762162000, "p": 0.4948 },
-        { "t": 1762180000, "p": 0.4955 },
-        { "t": 1762198000, "p": 0.4962 }
-      ]
-    },
-    {
-      "market_id": "US-ELECTION-2026-SENATE-NV",
-      "question": "Will Party X win Nevada Senate seat in 2026?",
-      "end_ts": 1774300000,
-      "rebate_bps": 2.7,
-      "history": [
-        { "t": 1762000000, "p": 0.4400 },
-        { "t": 1762018000, "p": 0.4406 },
-        { "t": 1762036000, "p": 0.4401 },
-        { "t": 1762054000, "p": 0.4410 },
-        { "t": 1762072000, "p": 0.4417 },
-        { "t": 1762090000, "p": 0.4413 },
-        { "t": 1762108000, "p": 0.4421 },
-        { "t": 1762126000, "p": 0.4428 },
-        { "t": 1762144000, "p": 0.4424 },
-        { "t": 1762162000, "p": 0.4432 },
-        { "t": 1762180000, "p": 0.4438 },
-        { "t": 1762198000, "p": 0.4435 }
-      ]
     }
   ]
 }
