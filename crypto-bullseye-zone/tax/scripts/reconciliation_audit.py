@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare resolved 1099-DA records against tax software disposals."""
+"""Compare resolved 1099-DA records against raw trade data or tax software disposals."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ def _ts(value: Optional[str]) -> Optional[float]:
 
 
 def normalize_tax_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalize tax software export rows into canonical schema."""
     normalized: List[Dict[str, Any]] = []
     for idx, row in enumerate(rows):
         asset = find_value(row, "asset")
@@ -36,6 +37,32 @@ def normalize_tax_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "proceeds_usd": proceeds,
                 "cost_basis_usd": basis,
                 "gain_loss_usd": gain,
+                "raw": row,
+            }
+        )
+    return normalized
+
+
+def normalize_kraken_trades(dispositions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalize Kraken API trade dispositions into canonical schema for audit."""
+    normalized: List[Dict[str, Any]] = []
+    for idx, row in enumerate(dispositions):
+        asset = row.get("asset")
+        quantity = to_float(row.get("quantity"))
+        disposed_at = row.get("disposed_at")
+        proceeds = to_float(row.get("proceeds_usd"))
+        fee = to_float(row.get("fee_usd"))
+        normalized.append(
+            {
+                "record_id": stable_id([asset, quantity, disposed_at, proceeds, "kraken_api", idx]),
+                "asset": asset,
+                "quantity": quantity,
+                "disposed_at": disposed_at,
+                "proceeds_usd": proceeds,
+                "cost_basis_usd": None,  # Raw trades don't have cost basis
+                "gain_loss_usd": None,
+                "fee_usd": fee,
+                "trade_id": row.get("trade_id"),
                 "raw": row,
             }
         )
@@ -134,7 +161,7 @@ def audit(
                 "asset": tax.get("asset"),
                 "date_time": tax.get("disposed_at"),
                 "delta": None,
-                "likely_cause": "tax_software_row_without_corresponding_1099da_row",
+                "likely_cause": "trade_without_corresponding_1099da_row",
                 "recommended_fix": "Validate transfer classification and broker reporting scope.",
                 "status": "open",
             }
@@ -152,9 +179,10 @@ def audit(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Audit 1099-DA rows against tax software rows")
+    parser = argparse.ArgumentParser(description="Audit 1099-DA rows against trade data")
     parser.add_argument("--resolved", required=True, help="Resolved 1099-DA JSON path")
-    parser.add_argument("--tax-input", required=True, help="Tax software CSV/JSON/JSONL path")
+    parser.add_argument("--kraken-trades", default=None, help="Kraken API trades JSON path")
+    parser.add_argument("--tax-input", default=None, help="Tax software CSV/JSON/JSONL path (legacy)")
     parser.add_argument("--output", required=True, help="Output audit JSON path")
     parser.add_argument(
         "--time-tolerance-seconds",
@@ -164,27 +192,38 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if not args.kraken_trades and not args.tax_input:
+        parser.error("Provide either --kraken-trades or --tax-input")
+
     payload = json.loads(Path(args.resolved).read_text(encoding="utf-8"))
     resolved_rows = payload.get("records", payload)
     if not isinstance(resolved_rows, list):
         raise ValueError("Resolved input must contain a list in 'records' or be a top-level array")
 
-    tax_rows = normalize_tax_rows(load_records(args.tax_input))
+    if args.kraken_trades:
+        kraken_data = json.loads(Path(args.kraken_trades).read_text(encoding="utf-8"))
+        dispositions = kraken_data.get("dispositions", [])
+        comparison_rows = normalize_kraken_trades(dispositions)
+        source = "kraken_api"
+    else:
+        comparison_rows = normalize_tax_rows(load_records(args.tax_input))
+        source = "tax_software"
+
     summary, exceptions = audit(
         resolved_rows=resolved_rows,
-        tax_rows=tax_rows,
+        tax_rows=comparison_rows,
         tolerance_seconds=args.time_tolerance_seconds,
     )
 
     write_json(
         args.output,
         {
+            "source": source,
             "summary": summary,
             "exceptions": exceptions,
-            "tax_rows": tax_rows,
         },
     )
-    print(f"Audited {len(resolved_rows)} vs {len(tax_rows)} rows -> {args.output}")
+    print(f"Audited {len(resolved_rows)} 1099-DA rows vs {len(comparison_rows)} {source} rows -> {args.output}")
 
 
 if __name__ == "__main__":
