@@ -28,22 +28,30 @@ description: "Provide two-sided liquidity on Polymarket with rebate-aware quotin
 - `monitor`: alias for quote-style dry monitoring output.
 - `live`: requires both `execution.live_mode=true` in config and `--yes-live` CLI confirmation.
 
+Live execution also requires:
+
+- `POLY_PRIVATE_KEY` (or `WALLET_PRIVATE_KEY`) for EIP-712 order signing
+- `POLY_API_KEY`, `POLY_PASSPHRASE`, and `POLY_SECRET` for authenticated submission
+
 ## Runtime Files
 
 - `scripts/agent.py` - rebate-aware quoting engine with risk guards
 - `config.example.json` - baseline strategy and 90-day backtest parameters
-- `.env.example` - environment variable template for API credentials
+- `.env.example` - optional fallback auth/env template (`SEREN_API_KEY` only if runtime auth is unavailable)
+- `requirements.txt` - installs `py-clob-client` for live order signing/submission
 
 ## Quick Start
 
 ```bash
-cd artifacts/polymarket-maker-rebate-bot
+cd polymarket/maker-rebate-bot
+pip install -r requirements.txt
 cp .env.example .env
 cp config.example.json config.json
 python3 scripts/agent.py --config config.json
 ```
 
 This runs the default 90-day backtest and returns a decision hint to keep paper-only or proceed to quote mode.
+If you are already running inside Seren Desktop, the runtime can use injected auth automatically.
 
 ## Run Quote Mode (After Backtest Review)
 
@@ -74,6 +82,7 @@ Each backtest market object should include:
 ## Safety Notes
 
 - Live execution is never enabled by default.
+- Live quote cycles cancel stale orders, fetch fresh market snapshots, and then poll open orders/positions after requoting.
 - Backtests are estimates and can materially differ from live outcomes.
 - Quotes are blocked when estimated edge is negative.
 - Markets close to resolution are excluded.

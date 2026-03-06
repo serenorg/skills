@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,6 +18,18 @@ from statistics import pstdev
 from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
+
+SHARED_DIR = Path(__file__).resolve().parents[2] / "_shared"
+if str(SHARED_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_DIR))
+
+from polymarket_live import (
+    PolymarketPublisherTrader,
+    execute_pair_trades,
+    live_settings_from_execution,
+    load_live_pair_markets,
+    pair_leg_exposure_notional,
+)
 
 SEREN_POLYMARKET_PUBLISHER_HOST = "api.serendb.com"
 SEREN_PUBLISHERS_PREFIX = "/publishers/"
@@ -157,6 +170,17 @@ def load_json(path: Path) -> dict[str, Any] | list[Any]:
 def load_config(config_path: str) -> dict[str, Any]:
     payload = load_json(Path(config_path))
     return payload if isinstance(payload, dict) else {}
+
+
+def _persist_runtime_state(config_path: str, config: dict[str, Any], state: dict[str, Any]) -> None:
+    if not isinstance(state, dict) or not state:
+        return
+    current_state = config.get("state")
+    if not isinstance(current_state, dict):
+        current_state = {}
+        config["state"] = current_state
+    current_state.update(state)
+    Path(config_path).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
 def to_strategy_params(config: dict[str, Any]) -> StrategyParams:
@@ -1155,8 +1179,7 @@ def run_trade(config: dict[str, Any], markets_file: str | None, yes_live: bool) 
         }
 
     p = to_strategy_params(config)
-    exposure = config.get("state", {}).get("leg_exposure", {})
-    leg_exposure = {str(k): _safe_float(v, 0.0) for k, v in exposure.items()}
+    bt = to_backtest_params(config)
     try:
         markets = _load_trade_markets(config, markets_file)
     except Exception as exc:  # pragma: no cover - defensive runtime path
@@ -1172,6 +1195,55 @@ def run_trade(config: dict[str, Any], markets_file: str | None, yes_live: bool) 
             "dry_run": True,
             "disclaimer": DISCLAIMER,
         }
+    market_source = "config"
+    if bool(execution.get("prefer_live_market_data", live_mode)):
+        try:
+            live_markets = load_live_pair_markets(
+                pairs_max=p.pairs_max,
+                min_seconds_to_resolution=p.min_seconds_to_resolution,
+                min_history_points=max(24, bt.min_history_points),
+                min_liquidity_usd=bt.min_liquidity_usd,
+                markets_fetch_page_size=max(bt.markets_fetch_page_size, p.pairs_max * 8, 40),
+                max_markets=bt.max_markets if bt.max_markets > 0 else max(p.pairs_max * 8, 40),
+                history_interval=bt.history_interval,
+                history_fidelity_minutes=bt.history_fidelity_minutes,
+                default_rebate_bps=p.maker_rebate_bps,
+            )
+        except Exception as exc:
+            if not markets:
+                return {
+                    "status": "error",
+                    "error_code": "live_market_data_load_failed",
+                    "message": str(exc),
+                    "dry_run": True,
+                    "disclaimer": DISCLAIMER,
+                }
+            live_markets = []
+        if live_markets:
+            markets = live_markets
+            market_source = "live-seren-publisher"
+
+    exposure = config.get("state", {}).get("leg_exposure", {})
+    leg_exposure = {str(k): _safe_float(v, 0.0) for k, v in exposure.items()}
+    live_trader: PolymarketPublisherTrader | None = None
+    if live_mode:
+        try:
+            live_trader = PolymarketPublisherTrader(
+                skill_root=Path(__file__).resolve().parents[1],
+                client_name="liquidity-paired-basis-maker",
+            )
+            leg_exposure = pair_leg_exposure_notional(
+                raw_positions=live_trader.get_positions(),
+                markets=markets,
+            )
+        except Exception as exc:
+            return {
+                "status": "error",
+                "error_code": "live_execution_init_failed",
+                "message": str(exc),
+                "dry_run": True,
+                "disclaimer": DISCLAIMER,
+            }
 
     trades: list[dict[str, Any]] = []
     skips: list[dict[str, Any]] = []
@@ -1201,11 +1273,12 @@ def run_trade(config: dict[str, Any], markets_file: str | None, yes_live: bool) 
             )
 
     mode = "live" if live_mode and yes_live and not dry_run else "dry-run"
-    return {
+    payload: dict[str, Any] = {
         "status": "ok",
         "skill": "liquidity-paired-basis-maker",
         "mode": mode,
         "dry_run": mode != "live",
+        "market_source": market_source,
         "strategy_summary": {
             "pairs_considered": len(markets),
             "pairs_quoted": len(trades),
@@ -1218,6 +1291,18 @@ def run_trade(config: dict[str, Any], markets_file: str | None, yes_live: bool) 
         "skips": skips,
         "disclaimer": DISCLAIMER,
     }
+    if mode == "live" and live_trader is not None:
+        live_execution = execute_pair_trades(
+            trader=live_trader,
+            pair_trades=trades,
+            markets=markets,
+            execution_settings=live_settings_from_execution(execution),
+        )
+        payload["live_execution"] = live_execution
+        payload["state"] = {"leg_exposure": live_execution.get("updated_leg_exposure", {})}
+        payload["strategy_summary"]["orders_submitted"] = len(live_execution.get("orders_submitted", []))
+        payload["strategy_summary"]["open_orders"] = len(live_execution.get("open_order_ids", []))
+    return payload
 
 
 def main() -> int:
@@ -1256,6 +1341,11 @@ def main() -> int:
 
     trade = run_trade(config=config, markets_file=args.markets_file, yes_live=args.yes_live)
     ok = trade.get("status") == "ok"
+    if ok and isinstance(trade.get("state"), dict):
+        try:
+            _persist_runtime_state(args.config, config, trade["state"])
+        except Exception as exc:  # pragma: no cover - defensive runtime path
+            trade["state_writeback_warning"] = str(exc)
     payload = {
         "status": "ok" if ok else "error",
         "skill": "liquidity-paired-basis-maker",

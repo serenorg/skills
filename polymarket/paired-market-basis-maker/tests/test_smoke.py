@@ -151,3 +151,124 @@ def test_trade_mode_fetches_live_pairs_when_config_markets_is_empty(monkeypatch)
     assert result["pair_trades"][0]["market_id"] == "LIVE-PAIR-1A"
     assert result["pair_trades"][0]["pair_market_id"] == "LIVE-PAIR-1B"
     assert any("/publishers/polymarket-data/markets?" in url for url in fetched_urls)
+
+
+def test_live_trade_mode_uses_live_pair_loader_and_executor(monkeypatch) -> None:
+    module = _load_agent_module()
+    load_calls: list[dict[str, object]] = []
+    execute_calls: list[dict[str, object]] = []
+
+    class FakeTrader:
+        def __init__(self, *, skill_root: Path, client_name: str, timeout_seconds: float = 30.0) -> None:
+            self.skill_root = skill_root
+            self.client_name = client_name
+            self.timeout_seconds = timeout_seconds
+
+        def get_positions(self) -> list[dict[str, object]]:
+            return [
+                {"asset_id": "TOKEN-PAIR-1A", "size": 3.0},
+                {"asset_id": "TOKEN-PAIR-1B", "size": 2.0},
+            ]
+
+    def fake_load_live_pair_markets(**kwargs):
+        load_calls.append(kwargs)
+        return [
+            {
+                "market_id": "LIVE-PAIR-1A",
+                "pair_market_id": "LIVE-PAIR-1B",
+                "question": "Primary leg",
+                "pair_question": "Pair leg",
+                "token_id": "TOKEN-PAIR-1A",
+                "pair_token_id": "TOKEN-PAIR-1B",
+                "mid_price": 0.62,
+                "pair_mid_price": 0.41,
+                "best_bid": 0.61,
+                "best_ask": 0.63,
+                "pair_best_bid": 0.4,
+                "pair_best_ask": 0.42,
+                "tick_size": "0.01",
+                "pair_tick_size": "0.01",
+                "neg_risk": False,
+                "pair_neg_risk": False,
+                "seconds_to_resolution": 86400,
+                "rebate_bps": 2.3,
+                "basis_volatility_bps": 80,
+            }
+        ]
+
+    def fake_execute_pair_trades(*, trader, pair_trades, markets, execution_settings):
+        execute_calls.append(
+            {
+                "client_name": trader.client_name,
+                "pair_trades": pair_trades,
+                "markets": markets,
+                "poll_attempts": execution_settings.poll_attempts,
+            }
+        )
+        return {
+            "orders_submitted": [{"id": "PAIR-ORDER-1"}, {"id": "PAIR-ORDER-2"}],
+            "open_order_ids": ["PAIR-ORDER-1", "PAIR-ORDER-2"],
+            "updated_leg_exposure": {"LIVE-PAIR-1A": 7.5, "LIVE-PAIR-1B": -7.5},
+        }
+
+    monkeypatch.setattr(module, "PolymarketPublisherTrader", FakeTrader)
+    monkeypatch.setattr(module, "load_live_pair_markets", fake_load_live_pair_markets)
+    monkeypatch.setattr(module, "execute_pair_trades", fake_execute_pair_trades)
+
+    result = module.run_trade(
+        config={
+            "execution": {
+                "dry_run": False,
+                "live_mode": True,
+                "prefer_live_market_data": True,
+                "poll_attempts": 4,
+            },
+            "backtest": {
+                "min_history_points": 72,
+                "min_liquidity_usd": 0,
+                "markets_fetch_page_size": 10,
+                "max_markets": 2,
+                "history_interval": "max",
+                "history_fidelity_minutes": 60,
+            },
+            "strategy": {
+                "bankroll_usd": 1000,
+                "pairs_max": 1,
+                "min_seconds_to_resolution": 60,
+                "min_edge_bps": 2.0,
+                "maker_rebate_bps": 2.3,
+                "expected_unwind_cost_bps": 1.5,
+                "adverse_selection_bps": 1.1,
+                "basis_entry_bps": 35,
+                "basis_exit_bps": 10,
+                "expected_convergence_ratio": 0.35,
+                "base_pair_notional_usd": 550,
+                "max_notional_per_pair_usd": 750,
+                "max_total_notional_usd": 1600,
+                "max_leg_notional_usd": 800,
+            },
+            "state": {"leg_exposure": {"CONFIG-PAIR-A": 1.0}},
+            "markets": [
+                {
+                    "market_id": "CONFIG-PAIR-A",
+                    "pair_market_id": "CONFIG-PAIR-B",
+                    "mid_price": 0.51,
+                    "pair_mid_price": 0.5,
+                    "seconds_to_resolution": 1000,
+                    "basis_volatility_bps": 5,
+                }
+            ],
+        },
+        markets_file=None,
+        yes_live=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["mode"] == "live"
+    assert result["market_source"] == "live-seren-publisher"
+    assert result["state"] == {"leg_exposure": {"LIVE-PAIR-1A": 7.5, "LIVE-PAIR-1B": -7.5}}
+    assert result["strategy_summary"]["orders_submitted"] == 2
+    assert result["strategy_summary"]["open_orders"] == 2
+    assert load_calls and load_calls[0]["pairs_max"] == 1
+    assert execute_calls and execute_calls[0]["client_name"] == "paired-market-basis-maker"
+    assert execute_calls[0]["pair_trades"][0]["market_id"] == "LIVE-PAIR-1A"

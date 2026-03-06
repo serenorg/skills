@@ -3,7 +3,11 @@
   "execution": {
     "dry_run": true,
     "live_mode": false,
-    "require_positive_backtest": true
+    "require_positive_backtest": true,
+    "prefer_live_market_data": true,
+    "cancel_before_requote": true,
+    "poll_attempts": 2,
+    "poll_interval_seconds": 1.5
   },
   "backtest": {
     "days": 90,

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +15,18 @@ from statistics import pstdev
 from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
+
+SHARED_DIR = Path(__file__).resolve().parents[2] / "_shared"
+if str(SHARED_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_DIR))
+
+from polymarket_live import (
+    PolymarketPublisherTrader,
+    execute_single_market_quotes,
+    live_settings_from_execution,
+    load_live_single_markets,
+    single_market_inventory_notional,
+)
 
 SEREN_POLYMARKET_PUBLISHER_HOST = "api.serendb.com"
 SEREN_PUBLISHERS_PREFIX = "/publishers/"
@@ -109,6 +122,17 @@ def load_json_file(path: Path) -> dict[str, Any]:
 
 def load_config(config_path: str) -> dict[str, Any]:
     return load_json_file(Path(config_path))
+
+
+def _persist_runtime_state(config_path: str, config: dict[str, Any], state: dict[str, Any]) -> None:
+    if not isinstance(state, dict) or not state:
+        return
+    current_state = config.get("state")
+    if not isinstance(current_state, dict):
+        current_state = {}
+        config["state"] = current_state
+    current_state.update(state)
+    Path(config_path).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
 def _coerce_market_rows(payload: Any) -> list[dict[str, Any]]:
@@ -1039,7 +1063,8 @@ def run_once(
     yes_live: bool,
 ) -> dict[str, Any]:
     params = to_params(config)
-    execution = config.get("execution", {})
+    execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
+    backtest_params = to_backtest_params(config)
     live_mode = bool(execution.get("live_mode", False))
     dry_run = bool(execution.get("dry_run", True))
 
@@ -1060,10 +1085,57 @@ def run_once(
             "dry_run": True,
         }
 
+    prefer_live_market_data = bool(execution.get("prefer_live_market_data", live_mode))
+    market_source = "config"
+    if prefer_live_market_data:
+        try:
+            live_markets = load_live_single_markets(
+                markets_max=params.markets_max,
+                min_seconds_to_resolution=params.min_seconds_to_resolution,
+                volatility_window_points=backtest_params.volatility_window_points,
+                min_history_points=max(24, backtest_params.volatility_window_points * 4),
+                min_liquidity_usd=backtest_params.min_liquidity_usd,
+                markets_fetch_limit=max(params.markets_max * 5, backtest_params.markets_fetch_limit),
+                history_interval="max",
+                history_fidelity_minutes=backtest_params.fidelity_minutes,
+                default_rebate_bps=params.default_rebate_bps,
+                timeout_seconds=30.0,
+            )
+        except Exception as exc:
+            if not markets:
+                return {
+                    "status": "error",
+                    "error_code": "live_market_data_load_failed",
+                    "message": str(exc),
+                    "dry_run": True,
+                }
+            live_markets = []
+        if live_markets:
+            markets = live_markets
+            market_source = "live-seren-publisher"
+
     inventory = config.get("state", {}).get("inventory", {})
     inventory_notional_by_market = {
         str(k): _safe_float(v, 0.0) for k, v in inventory.items()
     }
+    live_trader: PolymarketPublisherTrader | None = None
+    if live_mode:
+        try:
+            live_trader = PolymarketPublisherTrader(
+                skill_root=Path(__file__).resolve().parents[1],
+                client_name="polymarket-maker-rebate-bot",
+            )
+            inventory_notional_by_market = single_market_inventory_notional(
+                raw_positions=live_trader.get_positions(),
+                markets=markets,
+            )
+        except Exception as exc:
+            return {
+                "status": "error",
+                "error_code": "live_execution_init_failed",
+                "message": str(exc),
+                "dry_run": True,
+            }
 
     proposals: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -1101,11 +1173,12 @@ def run_once(
             )
 
     mode = "live" if live_mode and yes_live and not dry_run else "dry-run"
-    return {
+    payload: dict[str, Any] = {
         "status": "ok",
         "skill": "polymarket-maker-rebate-bot",
         "mode": mode,
         "dry_run": mode != "live",
+        "market_source": market_source,
         "strategy_summary": {
             "bankroll_usd": params.bankroll_usd,
             "markets_considered": len(markets),
@@ -1117,6 +1190,18 @@ def run_once(
         "quotes": proposals,
         "skips": rejected,
     }
+    if mode == "live" and live_trader is not None:
+        live_execution = execute_single_market_quotes(
+            trader=live_trader,
+            quotes=proposals,
+            markets=markets,
+            execution_settings=live_settings_from_execution(execution),
+        )
+        payload["live_execution"] = live_execution
+        payload["state"] = {"inventory": live_execution.get("updated_inventory", {})}
+        payload["strategy_summary"]["orders_submitted"] = len(live_execution.get("orders_submitted", []))
+        payload["strategy_summary"]["open_orders"] = len(live_execution.get("open_order_ids", []))
+    return payload
 
 
 def run_quote(config: dict[str, Any], markets_file: str | None, yes_live: bool) -> dict[str, Any]:
@@ -1148,6 +1233,11 @@ def main() -> int:
         )
     else:
         result = run_quote(config=config, markets_file=args.markets_file, yes_live=args.yes_live)
+        if result.get("status") == "ok" and isinstance(result.get("state"), dict):
+            try:
+                _persist_runtime_state(args.config, config, result["state"])
+            except Exception as exc:  # pragma: no cover - defensive runtime path
+                result["state_writeback_warning"] = str(exc)
     print(json.dumps(result, sort_keys=True))
     return 0 if result.get("status") == "ok" else 1
 

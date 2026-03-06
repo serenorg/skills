@@ -2,7 +2,11 @@
   "skill": "polymarket-maker-rebate-bot",
   "execution": {
     "dry_run": true,
-    "live_mode": false
+    "live_mode": false,
+    "prefer_live_market_data": true,
+    "cancel_before_requote": true,
+    "poll_attempts": 2,
+    "poll_interval_seconds": 1.5
   },
   "backtest": {
     "days": 90,

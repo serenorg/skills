@@ -35,23 +35,26 @@ Live execution requires both:
 
 - `execution.live_mode=true` in config
 - `--yes-live` on the CLI
+- `POLY_PRIVATE_KEY` (or `WALLET_PRIVATE_KEY`) plus `POLY_API_KEY` / `POLY_PASSPHRASE` / `POLY_SECRET`
 
 ## Runtime Files
 
 - `scripts/agent.py` - basis backtest + paired trade-intent runtime
 - `config.example.json` - strategy parameters, live backtest defaults, and trade-mode sample markets
-- `.env.example` - optional auth/env template (`API_KEY` in Seren Desktop runtime or `SEREN_API_KEY` standalone)
+- `.env.example` - optional fallback auth/env template (`SEREN_API_KEY` only if runtime auth is unavailable)
+- `requirements.txt` - installs `py-clob-client` for live order signing/submission
 
 ## Quick Start
 
 ```bash
-cd artifacts/polymarket/liquidity-paired-basis-maker
+cd polymarket/liquidity-paired-basis-maker
+pip install -r requirements.txt
 cp .env.example .env
 cp config.example.json config.json
 python3 scripts/agent.py --config config.json
 ```
 
-If you are logged into Seren Desktop, the runtime can use injected `API_KEY` auth automatically.
+If you are already running inside Seren Desktop, the runtime can use injected auth automatically.
 
 ## Run Trade Mode (Backtest-First)
 

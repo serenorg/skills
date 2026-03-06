@@ -228,3 +228,127 @@ def test_backtest_rejects_non_seren_polymarket_data_source(tmp_path: Path) -> No
     assert output["status"] == "error"
     assert output["error_code"] == "backtest_data_load_failed"
     assert "Seren Polymarket Publisher" in output["message"]
+
+
+def test_live_quote_mode_uses_live_market_loader_and_executor(monkeypatch) -> None:
+    agent = _load_agent_module()
+    load_calls: list[dict[str, object]] = []
+    execute_calls: list[dict[str, object]] = []
+
+    class FakeTrader:
+        def __init__(self, *, skill_root: Path, client_name: str, timeout_seconds: float = 30.0) -> None:
+            self.skill_root = skill_root
+            self.client_name = client_name
+            self.timeout_seconds = timeout_seconds
+
+        def get_positions(self) -> list[dict[str, object]]:
+            return [{"asset_id": "TOKEN-LIVE-1", "size": 4.0}]
+
+    def fake_load_live_single_markets(**kwargs):
+        load_calls.append(kwargs)
+        return [
+            {
+                "market_id": "LIVE-MKT-1",
+                "question": "Will live event happen?",
+                "token_id": "TOKEN-LIVE-1",
+                "mid_price": 0.48,
+                "best_bid": 0.47,
+                "best_ask": 0.49,
+                "seconds_to_resolution": 86400,
+                "volatility_bps": 50,
+                "rebate_bps": 2.5,
+                "tick_size": "0.01",
+                "neg_risk": False,
+            }
+        ]
+
+    def fake_execute_single_market_quotes(*, trader, quotes, markets, execution_settings):
+        execute_calls.append(
+            {
+                "client_name": trader.client_name,
+                "quotes": quotes,
+                "markets": markets,
+                "poll_attempts": execution_settings.poll_attempts,
+            }
+        )
+        return {
+            "orders_submitted": [{"id": "ORDER-1"}, {"id": "ORDER-2"}],
+            "open_order_ids": ["ORDER-1"],
+            "updated_inventory": {"LIVE-MKT-1": 12.5},
+        }
+
+    monkeypatch.setattr(agent, "PolymarketPublisherTrader", FakeTrader)
+    monkeypatch.setattr(agent, "load_live_single_markets", fake_load_live_single_markets)
+    monkeypatch.setattr(agent, "execute_single_market_quotes", fake_execute_single_market_quotes)
+
+    result = agent.run_once(
+        config={
+            "execution": {
+                "dry_run": False,
+                "live_mode": True,
+                "prefer_live_market_data": True,
+                "poll_attempts": 3,
+            },
+            "backtest": {
+                "volatility_window_points": 24,
+                "min_liquidity_usd": 0,
+                "markets_fetch_limit": 5,
+                "fidelity_minutes": 60,
+            },
+            "strategy": {
+                "bankroll_usd": 1000,
+                "markets_max": 1,
+                "min_seconds_to_resolution": 60,
+                "min_edge_bps": 2,
+                "default_rebate_bps": 3,
+                "expected_unwind_cost_bps": 1.5,
+                "adverse_selection_bps": 1.0,
+                "min_spread_bps": 20,
+                "max_spread_bps": 150,
+                "volatility_spread_multiplier": 0.35,
+                "base_order_notional_usd": 25,
+                "max_notional_per_market_usd": 125,
+                "max_total_notional_usd": 500,
+                "max_position_notional_usd": 150,
+                "inventory_skew_strength_bps": 25,
+            },
+            "state": {"inventory": {"CONFIG-MKT": 1.0}},
+        },
+        markets=[
+            {
+                "market_id": "CONFIG-MKT",
+                "mid_price": 0.2,
+                "best_bid": 0.19,
+                "best_ask": 0.21,
+                "seconds_to_resolution": 1000,
+                "volatility_bps": 10,
+            }
+        ],
+        yes_live=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["mode"] == "live"
+    assert result["market_source"] == "live-seren-publisher"
+    assert result["state"] == {"inventory": {"LIVE-MKT-1": 12.5}}
+    assert result["strategy_summary"]["orders_submitted"] == 2
+    assert result["strategy_summary"]["open_orders"] == 1
+    assert load_calls and load_calls[0]["markets_max"] == 1
+    assert execute_calls and execute_calls[0]["client_name"] == "polymarket-maker-rebate-bot"
+    assert execute_calls[0]["quotes"][0]["market_id"] == "LIVE-MKT-1"
+
+
+def test_persist_runtime_state_updates_config_file(tmp_path: Path) -> None:
+    agent = _load_agent_module()
+    config_path = tmp_path / "config.json"
+    config = {"state": {"inventory": {"OLD": 1.0}}}
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    agent._persist_runtime_state(
+        str(config_path),
+        config,
+        {"inventory": {"LIVE-MKT-1": 12.5}},
+    )
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["state"]["inventory"] == {"LIVE-MKT-1": 12.5}
