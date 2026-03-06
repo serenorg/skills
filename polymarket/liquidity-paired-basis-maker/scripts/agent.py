@@ -48,8 +48,8 @@ DISCLAIMER = (
 
 @dataclass(frozen=True)
 class StrategyParams:
-    bankroll_usd: float = 500.0
-    pairs_max: int = 6
+    bankroll_usd: float = 1000.0
+    pairs_max: int = 8
     min_seconds_to_resolution: int = 2 * 60 * 60
     min_edge_bps: float = 2.0
     maker_rebate_bps: float = 2.3
@@ -58,10 +58,10 @@ class StrategyParams:
     basis_entry_bps: float = 35.0
     basis_exit_bps: float = 10.0
     expected_convergence_ratio: float = 0.35
-    base_pair_notional_usd: float = 65.0
-    max_notional_per_pair_usd: float = 240.0
-    max_total_notional_usd: float = 500.0
-    max_leg_notional_usd: float = 250.0
+    base_pair_notional_usd: float = 550.0
+    max_notional_per_pair_usd: float = 750.0
+    max_total_notional_usd: float = 1600.0
+    max_leg_notional_usd: float = 800.0
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ class BacktestParams:
     days: int = 90
     days_min: int = 90
     days_max: int = 365
-    participation_rate: float = 0.64
+    participation_rate: float = 0.9
     min_history_points: int = 72
     min_events: int = 120
     min_liquidity_usd: float = 5000.0
@@ -162,8 +162,8 @@ def load_config(config_path: str) -> dict[str, Any]:
 def to_strategy_params(config: dict[str, Any]) -> StrategyParams:
     raw = config.get("strategy", {})
     return StrategyParams(
-        bankroll_usd=max(1.0, _safe_float(raw.get("bankroll_usd"), 500.0)),
-        pairs_max=max(1, _safe_int(raw.get("pairs_max"), 6)),
+        bankroll_usd=max(1.0, _safe_float(raw.get("bankroll_usd"), 1000.0)),
+        pairs_max=max(1, _safe_int(raw.get("pairs_max"), 8)),
         min_seconds_to_resolution=max(60, _safe_int(raw.get("min_seconds_to_resolution"), 7200)),
         min_edge_bps=_safe_float(raw.get("min_edge_bps"), 2.0),
         maker_rebate_bps=_safe_float(raw.get("maker_rebate_bps"), 2.3),
@@ -176,10 +176,10 @@ def to_strategy_params(config: dict[str, Any]) -> StrategyParams:
             0.0,
             1.0,
         ),
-        base_pair_notional_usd=max(1.0, _safe_float(raw.get("base_pair_notional_usd"), 65.0)),
-        max_notional_per_pair_usd=max(1.0, _safe_float(raw.get("max_notional_per_pair_usd"), 240.0)),
-        max_total_notional_usd=max(1.0, _safe_float(raw.get("max_total_notional_usd"), 500.0)),
-        max_leg_notional_usd=max(1.0, _safe_float(raw.get("max_leg_notional_usd"), 250.0)),
+        base_pair_notional_usd=max(1.0, _safe_float(raw.get("base_pair_notional_usd"), 550.0)),
+        max_notional_per_pair_usd=max(1.0, _safe_float(raw.get("max_notional_per_pair_usd"), 750.0)),
+        max_total_notional_usd=max(1.0, _safe_float(raw.get("max_total_notional_usd"), 1600.0)),
+        max_leg_notional_usd=max(1.0, _safe_float(raw.get("max_leg_notional_usd"), 800.0)),
     )
 
 
@@ -193,7 +193,7 @@ def to_backtest_params(config: dict[str, Any]) -> BacktestParams:
         days=days,
         days_min=days_min,
         days_max=days_max,
-        participation_rate=clamp(_safe_float(raw.get("participation_rate"), 0.64), 0.0, 1.0),
+        participation_rate=clamp(_safe_float(raw.get("participation_rate"), 0.9), 0.0, 1.0),
         min_history_points=max(8, _safe_int(raw.get("min_history_points"), 72)),
         min_events=max(1, _safe_int(raw.get("min_events"), 120)),
         min_liquidity_usd=max(0.0, _safe_float(raw.get("min_liquidity_usd"), 5000.0)),

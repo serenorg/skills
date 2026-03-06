@@ -36,6 +36,9 @@ def test_live_guard_fixture_blocks_execution() -> None:
 
 
 def test_backtest_run_type_returns_result_from_config_history(tmp_path: Path) -> None:
+    payload = json.loads(CONFIG_EXAMPLE_PATH.read_text(encoding="utf-8"))
+    assert payload["strategy"]["bankroll_usd"] == 1000
+
     now_ts = int(time.time())
     start_ts = now_ts - (90 * 24 * 3600)
     history = []
@@ -45,44 +48,19 @@ def test_backtest_run_type_returns_result_from_config_history(tmp_path: Path) ->
         px = max(0.05, min(0.95, 0.5 + wave + drift))
         history.append({"t": start_ts + (i * 3600), "p": round(px, 6)})
 
-    payload = {
-        "execution": {"dry_run": True, "live_mode": False},
-        "backtest": {
-            "days": 90,
-            "fidelity_minutes": 60,
-            "participation_rate": 0.2,
-            "volatility_window_points": 24,
-            "min_history_points": 200,
-            "min_liquidity_usd": 0,
-        },
-        "strategy": {
-            "bankroll_usd": 1000,
-            "markets_max": 4,
-            "min_seconds_to_resolution": 21600,
-            "min_edge_bps": 2,
-            "default_rebate_bps": 3,
-            "expected_unwind_cost_bps": 1.5,
-            "adverse_selection_bps": 1.0,
-            "min_spread_bps": 20,
-            "max_spread_bps": 150,
-            "volatility_spread_multiplier": 0.35,
-            "base_order_notional_usd": 25,
-            "max_notional_per_market_usd": 125,
-            "max_total_notional_usd": 500,
-            "max_position_notional_usd": 150,
-            "inventory_skew_strength_bps": 25,
-        },
-        "backtest_markets": [
-            {
-                "market_id": "TEST-90D",
-                "question": "Synthetic 90D market",
-                "token_id": "TEST-90D",
-                "rebate_bps": 3,
-                "end_ts": now_ts + (7 * 24 * 3600),
-                "history": history,
-            }
-        ],
-    }
+    payload["backtest"]["min_history_points"] = 200
+    payload["backtest"]["min_liquidity_usd"] = 0
+    payload["backtest_markets"] = [
+        {
+            "market_id": f"TEST-90D-{idx}",
+            "question": "Synthetic 90D market",
+            "token_id": f"TEST-90D-{idx}",
+            "rebate_bps": 3,
+            "end_ts": now_ts + (7 * 24 * 3600),
+            "history": history,
+        }
+        for idx in range(payload["strategy"]["markets_max"])
+    ]
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -110,6 +88,8 @@ def test_backtest_run_type_returns_result_from_config_history(tmp_path: Path) ->
     assert output["backtest_summary"]["source"] == "config"
     assert output["backtest_summary"]["markets_selected"] >= 1
     assert output["results"]["events"] > 0
+    assert output["results"]["starting_bankroll_usd"] == 1000
+    assert output["results"]["return_pct"] >= 20.0
 
 
 def test_config_example_uses_seren_polymarket_publisher_urls() -> None:
