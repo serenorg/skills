@@ -7,17 +7,17 @@
   "backtest": {
     "days": 90,
     "fidelity_minutes": 60,
-    "participation_rate": 0.2,
+    "participation_rate": 0.6,
     "volatility_window_points": 24,
-    "min_liquidity_usd": 100000,
-    "markets_fetch_limit": 300,
+    "min_liquidity_usd": 25000,
+    "markets_fetch_limit": 500,
     "min_history_points": 480,
     "gamma_markets_url": "https://api.serendb.com/publishers/polymarket-data/markets",
     "clob_history_url": "https://api.serendb.com/publishers/polymarket-trading-serenai/trades"
   },
   "strategy": {
     "bankroll_usd": 1000,
-    "markets_max": 8,
+    "markets_max": 12,
     "min_seconds_to_resolution": 21600,
     "min_edge_bps": 2,
     "default_rebate_bps": 3,
@@ -26,10 +26,10 @@
     "min_spread_bps": 20,
     "max_spread_bps": 150,
     "volatility_spread_multiplier": 0.35,
-    "base_order_notional_usd": 25,
-    "max_notional_per_market_usd": 125,
-    "max_total_notional_usd": 500,
-    "max_position_notional_usd": 150,
+    "base_order_notional_usd": 100,
+    "max_notional_per_market_usd": 300,
+    "max_total_notional_usd": 1400,
+    "max_position_notional_usd": 300,
     "inventory_skew_strength_bps": 25
   },
   "state": {

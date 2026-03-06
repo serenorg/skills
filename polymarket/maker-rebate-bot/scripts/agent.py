@@ -39,7 +39,7 @@ MISSING_SEREN_API_KEY_ERROR = "missing_seren_api_key: set SEREN_API_KEY"
 @dataclass(frozen=True)
 class StrategyParams:
     bankroll_usd: float = 1000.0
-    markets_max: int = 8
+    markets_max: int = 12
     min_seconds_to_resolution: int = 6 * 60 * 60
     min_edge_bps: float = 2.0
     default_rebate_bps: float = 3.0
@@ -48,10 +48,10 @@ class StrategyParams:
     min_spread_bps: float = 20.0
     max_spread_bps: float = 150.0
     volatility_spread_multiplier: float = 0.35
-    base_order_notional_usd: float = 25.0
-    max_notional_per_market_usd: float = 125.0
-    max_total_notional_usd: float = 500.0
-    max_position_notional_usd: float = 150.0
+    base_order_notional_usd: float = 100.0
+    max_notional_per_market_usd: float = 300.0
+    max_total_notional_usd: float = 1400.0
+    max_position_notional_usd: float = 300.0
     inventory_skew_strength_bps: float = 25.0
 
 
@@ -59,10 +59,10 @@ class StrategyParams:
 class BacktestParams:
     days: int = 90
     fidelity_minutes: int = 60
-    participation_rate: float = 0.2
+    participation_rate: float = 0.6
     volatility_window_points: int = 24
-    min_liquidity_usd: float = 100000.0
-    markets_fetch_limit: int = 300
+    min_liquidity_usd: float = 25000.0
+    markets_fetch_limit: int = 500
     min_history_points: int = 480
     gamma_markets_url: str = f"{SEREN_POLYMARKET_DATA_URL_PREFIX}/markets"
     clob_history_url: str = f"{SEREN_POLYMARKET_TRADING_URL_PREFIX}/trades"
@@ -158,7 +158,7 @@ def to_params(config: dict[str, Any]) -> StrategyParams:
     strategy = config.get("strategy", {})
     return StrategyParams(
         bankroll_usd=_safe_float(strategy.get("bankroll_usd"), 1000.0),
-        markets_max=_safe_int(strategy.get("markets_max"), 8),
+        markets_max=_safe_int(strategy.get("markets_max"), 12),
         min_seconds_to_resolution=_safe_int(strategy.get("min_seconds_to_resolution"), 21600),
         min_edge_bps=_safe_float(strategy.get("min_edge_bps"), 2.0),
         default_rebate_bps=_safe_float(strategy.get("default_rebate_bps"), 3.0),
@@ -170,10 +170,10 @@ def to_params(config: dict[str, Any]) -> StrategyParams:
             strategy.get("volatility_spread_multiplier"),
             0.35,
         ),
-        base_order_notional_usd=_safe_float(strategy.get("base_order_notional_usd"), 25.0),
-        max_notional_per_market_usd=_safe_float(strategy.get("max_notional_per_market_usd"), 125.0),
-        max_total_notional_usd=_safe_float(strategy.get("max_total_notional_usd"), 500.0),
-        max_position_notional_usd=_safe_float(strategy.get("max_position_notional_usd"), 150.0),
+        base_order_notional_usd=_safe_float(strategy.get("base_order_notional_usd"), 100.0),
+        max_notional_per_market_usd=_safe_float(strategy.get("max_notional_per_market_usd"), 300.0),
+        max_total_notional_usd=_safe_float(strategy.get("max_total_notional_usd"), 1400.0),
+        max_position_notional_usd=_safe_float(strategy.get("max_position_notional_usd"), 300.0),
         inventory_skew_strength_bps=_safe_float(strategy.get("inventory_skew_strength_bps"), 25.0),
     )
 
@@ -184,13 +184,13 @@ def to_backtest_params(config: dict[str, Any]) -> BacktestParams:
         days=max(1, _safe_int(backtest.get("days"), 90)),
         fidelity_minutes=max(1, _safe_int(backtest.get("fidelity_minutes"), 60)),
         participation_rate=clamp(
-            _safe_float(backtest.get("participation_rate"), 0.2),
+            _safe_float(backtest.get("participation_rate"), 0.6),
             0.0,
             1.0,
         ),
         volatility_window_points=max(3, _safe_int(backtest.get("volatility_window_points"), 24)),
-        min_liquidity_usd=max(0.0, _safe_float(backtest.get("min_liquidity_usd"), 100000.0)),
-        markets_fetch_limit=max(1, _safe_int(backtest.get("markets_fetch_limit"), 300)),
+        min_liquidity_usd=max(0.0, _safe_float(backtest.get("min_liquidity_usd"), 25000.0)),
+        markets_fetch_limit=max(1, _safe_int(backtest.get("markets_fetch_limit"), 500)),
         min_history_points=max(10, _safe_int(backtest.get("min_history_points"), 480)),
         gamma_markets_url=_safe_str(
             backtest.get("gamma_markets_url"),
