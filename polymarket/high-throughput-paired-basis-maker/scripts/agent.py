@@ -24,7 +24,13 @@ DISCLAIMER = (
     "and liquidity can vanish. Backtests are hypothetical and do not guarantee future "
     "performance. Use dry-run first and only trade with risk capital."
 )
-SEREN_POLYMARKET_PUBLISHER_PREFIX = "https://api.serendb.com/publishers/polymarket-data/"
+SEREN_POLYMARKET_DATA_PUBLISHER_PREFIX = "https://api.serendb.com/publishers/polymarket-data/"
+SEREN_POLYMARKET_TRADING_PUBLISHER_PREFIX = "https://api.serendb.com/publishers/polymarket-trading-serenai/"
+SEREN_ALLOWED_POLYMARKET_PUBLISHER_PREFIXES = (
+    SEREN_POLYMARKET_DATA_PUBLISHER_PREFIX,
+    SEREN_POLYMARKET_TRADING_PUBLISHER_PREFIX,
+)
+MISSING_RUNTIME_AUTH_ERROR = "missing_runtime_auth: set API_KEY (Seren Desktop runtime) or SEREN_API_KEY"
 
 
 @dataclass(frozen=True)
@@ -348,14 +354,14 @@ def _parse_iso_ts(value: Any) -> int | None:
 
 
 def _http_get_json(url: str, timeout: int = 30) -> dict[str, Any] | list[Any]:
-    if not url.startswith(SEREN_POLYMARKET_PUBLISHER_PREFIX):
+    if not any(url.startswith(prefix) for prefix in SEREN_ALLOWED_POLYMARKET_PUBLISHER_PREFIXES):
         raise ValueError(
             "policy_violation: backtest data source must use Seren Polymarket publisher "
-            f"({SEREN_POLYMARKET_PUBLISHER_PREFIX}); got {url}"
+            f"({', '.join(SEREN_ALLOWED_POLYMARKET_PUBLISHER_PREFIXES)}); got {url}"
         )
-    api_key = os.getenv("SEREN_API_KEY", "").strip()
+    api_key = os.getenv("API_KEY", "").strip() or os.getenv("SEREN_API_KEY", "").strip()
     if not api_key:
-        raise ValueError("missing_seren_api_key: set SEREN_API_KEY to query Seren publishers.")
+        raise ValueError(MISSING_RUNTIME_AUTH_ERROR)
     req = Request(
         url,
         headers={

@@ -40,7 +40,7 @@ Live execution requires both:
 
 - `scripts/agent.py` - basis backtest + paired trade-intent runtime
 - `config.example.json` - strategy parameters, live backtest defaults, and trade-mode sample markets
-- `.env.example` - optional fallback auth/env template (`SEREN_API_KEY` only if MCP is unavailable)
+- `.env.example` - optional auth/env template (`API_KEY` in Seren Desktop runtime or `SEREN_API_KEY` standalone)
 
 ## Quick Start
 
@@ -51,7 +51,7 @@ cp config.example.json config.json
 python3 scripts/agent.py --config config.json
 ```
 
-If you are logged into Seren Desktop, the runtime uses local `seren-mcp` auth automatically.
+If you are logged into Seren Desktop, the runtime can use injected `API_KEY` auth automatically.
 
 ## Run Trade Mode (Backtest-First)
 
